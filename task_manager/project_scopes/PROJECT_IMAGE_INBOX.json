@@ -1,0 +1,58 @@
+{
+  "project_id": "PROJECT_IMAGE_INBOX",
+  "status": "APPROVED",
+  "gpt_audit": "SCOPE_APPROVED_WITH_REDUCTION",
+  "allowed_paths": [
+    "extensions/image-inbox/package.json",
+    "extensions/image-inbox/openclaw.plugin.json",
+    "extensions/image-inbox/index.js",
+    "extensions/image-inbox/index.ts"
+  ],
+  "blocked_paths": [
+    "gateway/**",
+    "runtime/**",
+    "models/**",
+    "extensions/*",
+    "package-lock.json",
+    "dashboard-v2/**",
+    "scripts/**",
+    "tools/**"
+  ],
+  "minimal_functional_scope": {
+    "description": "Albert uploads one image, it is stored in /openclaw/data/image-inbox/uploads, and NeoDaemon can list minimal metadata.",
+    "allowed_implementation_paths": [
+      "extensions/image-inbox/index.js",
+      "extensions/image-inbox/index.ts",
+      "extensions/image-inbox/openclaw.plugin.json",
+      "extensions/image-inbox/package.json"
+    ],
+    "upload": {
+      "single_image_only": true,
+      "allowed_formats": [
+        "jpg",
+        "jpeg",
+        "png",
+        "webp"
+      ],
+      "max_bytes": 5242880,
+      "storage_dir": "/openclaw/data/image-inbox/uploads",
+      "sanitize_filename": true,
+      "no_overwrite": true
+    },
+    "listing": {
+      "metadata_minimal": true
+    },
+    "non_goals": [
+      "OCR",
+      "visual AI",
+      "embeddings",
+      "gallery",
+      "image editing",
+      "multi-user support",
+      "multiple upload"
+    ]
+  },
+  "max_risk": "MEDIUM",
+  "automerge_allowed": false,
+  "runtime_required": false
+}

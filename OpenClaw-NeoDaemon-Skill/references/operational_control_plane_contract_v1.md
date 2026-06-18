@@ -1,0 +1,336 @@
+# Operational Control Plane Contract v1
+
+## Status
+
+Contract only. No runtime, gateway, model, scheduler, alert, Telegram, Gmail, UI, or dashboard changes.
+
+## Purpose
+
+Operational Control Plane V1 defines a single read-only source of truth for NeoDaemon/OpenClaw operational state.
+
+It must answer:
+
+- can NeoDaemon work locally now?
+- can NeoDaemon start a Project Executor feature now?
+- can NeoDaemon safely launch heavy model/Codex work now?
+- what is the current operational risk?
+- what is the next minimum action?
+
+## Required Separation
+
+V1 must always separate:
+
+```text
+can_work.local
+can_work.start_feature
+can_work.heavy_model
+```
+
+A local operation may be allowed while heavy model work is warning or blocked.
+
+## JSON Contract
+
+```json
+{
+  "schema_version": "operational_control_plane.v1",
+  "generated_at": null,
+  "status": "OK | WARNING | DEGRADED | BLOCKED | NO_VERIFICADO",
+  "risk_level": "LOW | MEDIUM | HIGH | UNKNOWN",
+  "can_work": {
+    "local": true,
+    "start_feature": true,
+    "heavy_model": false
+  },
+  "confidence": {
+    "healthcheck": "HIGH",
+    "preflight": "HIGH",
+    "codex": "MEDIUM",
+    "openclaw_status": "MEDIUM",
+    "usage_dashboard": "LOW"
+  },
+  "signals": {
+    "healthcheck": {
+      "status": "OK | DEGRADED | BLOCKED | NO_VERIFICADO",
+      "confidence": "HIGH",
+      "summary": {}
+    },
+    "preflight": {
+      "status": "READY | DEGRADED | BLOCKED | NO_VERIFICADO",
+      "confidence": "HIGH",
+      "summary": {}
+    },
+    "codex": {
+      "status": "AVAILABLE | PLAN_LIMIT_REACHED | RATE_LIMIT_OR_COOLDOWN | SIGNIN_ERROR | UNKNOWN",
+      "confidence": "MEDIUM",
+      "summary": {}
+    },
+    "openclaw_status": {
+      "status": "OK | WARNING | DEGRADED | NO_VERIFICADO",
+      "confidence": "MEDIUM",
+      "summary": {}
+    },
+    "usage_dashboard": {
+      "status": "OK | WARNING | DEGRADED | NO_VERIFICADO",
+      "confidence": "LOW",
+      "summary": {
+        "last_24h_units": null,
+        "previous_24h_units": null,
+        "delta_percent": null,
+        "comparison_stability": "OK | LOW | UNKNOWN"
+      }
+    }
+  },
+  "derived": {
+    "context_percent": null,
+    "usage_comparison_stability": "OK | LOW | UNKNOWN",
+    "blocking_reason": null
+  },
+  "health_ia": {
+    "schema_version": "health_ia.v1",
+    "status": "OK | WARNING | NO_VERIFICADO",
+    "risk": "LOW | MEDIUM | HIGH | UNKNOWN",
+    "summary": {
+      "updated_at": null,
+      "usage_24h_units": null,
+      "previous_24h_units": null,
+      "delta_percent": null,
+      "units_per_minute": null,
+      "usage_entries_24h": null
+    },
+    "details": {
+      "input_units_24h": null,
+      "output_units_24h": null,
+      "cache_read_units_24h": null,
+      "total_units_historical": null,
+      "cache_read_units_historical": null
+    },
+    "source": {
+      "path": "USAGE_DASHBOARD",
+      "confidence": "LOW | NO_VERIFICADO",
+      "available": true,
+      "blocking": false
+    }
+  },
+  "staleness": {
+    "healthcheck": {
+      "present": true,
+      "stale": "false | true | unknown",
+      "age_seconds": null
+    }
+  },
+  "recommended_mode": "local_only | small_feature | avoid_heavy_model",
+  "blockers": [],
+  "warnings": [],
+  "recommended_next_action": "string",
+  "safe": true,
+  "logs_redacted": true
+}
+```
+
+## Confidence Model
+
+### HIGH
+
+A HIGH-confidence signal is:
+
+- local and direct;
+- deterministic;
+- functionally validated;
+- low risk for misleading interpretation.
+
+HIGH signals may allow or block local/start-feature decisions.
+
+### MEDIUM
+
+A MEDIUM-confidence signal is:
+
+- useful but partial;
+- possibly stale;
+- possibly dependent on external output format;
+- not proof of end-to-end availability.
+
+MEDIUM signals may raise risk. They may block only when they report an explicit blocking state.
+
+### LOW
+
+A LOW-confidence signal is:
+
+- mathematically valid but operationally ambiguous;
+- useful for context and trend interpretation;
+- not reliable as a blocking source by itself in V1.
+
+LOW signals must remain visible as warnings/context but must not block by themselves.
+
+## Initial Signal Confidence
+
+```json
+{
+  "healthcheck": "HIGH",
+  "preflight": "HIGH",
+  "codex": "MEDIUM",
+  "openclaw_status": "MEDIUM",
+  "usage_dashboard": "LOW"
+}
+```
+
+## Source Responsibilities
+
+### healthcheck
+
+Primary source for:
+
+```text
+can_work.local
+```
+
+Expected signal:
+
+```text
+neodaemon_healthcheck_v1.py
+```
+
+### preflight
+
+Primary source for:
+
+```text
+can_work.start_feature
+```
+
+Expected signal:
+
+```text
+project_executor_preflight_v1.py
+```
+
+### codex
+
+Primary source for:
+
+```text
+can_work.heavy_model
+```
+
+Expected signal:
+
+```text
+codex_status_readonly_v1.py
+```
+
+Rules:
+
+- `PLAN_LIMIT_REACHED` blocks heavy model work.
+- `SIGNIN_ERROR` blocks heavy model work.
+- `RATE_LIMIT_OR_COOLDOWN` blocks heavy model work until state clears.
+- `UNKNOWN` does not block local work, but raises heavy-model risk.
+
+### openclaw_status
+
+Source for:
+
+- context pressure;
+- gateway signal;
+- task pressure;
+- model/session context.
+
+Expected signal:
+
+```text
+openclaw_status_signal_summary_v1.py
+```
+
+### usage_dashboard
+
+Source for:
+
+- activity trend;
+- last 24h usage;
+- previous 24h usage;
+- comparison stability.
+
+Rules:
+
+- usage dashboard is LOW confidence in V1.
+- it must not block by itself.
+- it may add warnings such as low comparison base or unusual activity deltas.
+
+## Required Phase Order
+
+```text
+Fase 0 — Contract
+Fase 1 — Validation Fixtures
+Fase 2 — Aggregator
+Fase 3 — Human Summary
+Fase 4 — Consumers
+```
+
+Reason:
+
+Fixtures must exist before the aggregator so defective or misleading signals are not consolidated prematurely.
+
+Initial fixtures live in:
+
+```text
+OpenClaw-NeoDaemon-Skill/references/operational_control_plane_fixtures_v1.md
+```
+
+They are data-only acceptance cases for the future aggregator and do not implement operational logic.
+
+The fixtures-only aggregator lives in:
+
+```text
+scripts/project/operational_control_plane_aggregator_v1.py
+```
+
+It validates fixture expectations before any live signals are consumed.
+
+Human summary mode is available with:
+
+```text
+--human
+```
+
+The human summary is derived from the same fixtures-only validation payload and must not recalculate or reinterpret source rules.
+
+The first real-signal adapter lives in:
+
+```text
+scripts/project/operational_control_plane_real_signals_v1.py
+```
+
+V1 connects project healthcheck, project preflight, usage dashboard, and controlled OpenClaw status signals. Heavy model remains explicitly not connected.
+
+Project healthcheck controls only `can_work.local`; project preflight remains the only source for `can_work.start_feature`.
+
+Controlled OpenClaw status is read only through `inspect_openclaw_native_status_readonly` with `command=status`, then summarized by `scripts/project/openclaw_status_signal_summary_v1.py`. It must not modify `can_work.local`, `can_work.start_feature`, or `can_work.heavy_model`.
+
+The real-signal adapter also supports `--human`, which renders a human summary derived from the same JSON payload. JSON remains the default output.
+
+The real-signal adapter may include advisory `staleness` and `recommended_mode` fields. They must not change `can_work.local`, `can_work.start_feature`, `can_work.heavy_model`, `status`, or `risk_level`.
+
+The real-signal adapter may include `health_ia` as an advisory LOW-confidence usage-health block derived from the existing usage dashboard source. It contains data, status, risk, details, and source metadata only. It must not store human interpretation text, must not change `can_work.*`, and must not change global `status` or `risk_level` by itself. If the source is missing or invalid, `health_ia.status` degrades to `NO_VERIFICADO` with `source.available=false`.
+
+`recommended_mode` is advisory only. While `HEAVY_MODEL_NOT_CONNECTED_V1` is present, the recommended mode is `avoid_heavy_model`.
+
+The snapshot file `dashboard-v2/data/operational_control_plane_v1.json` is a generated mutable artifact. It is generated on demand by `scripts/project/write_operational_control_plane_snapshot_v1.py`, is not source code, must not enter PRs, and may be deleted and regenerated.
+
+## Acceptance Criteria For This Contract
+
+- schema version is explicit;
+- confidence model is defined;
+- source responsibilities are defined;
+- `can_work.local`, `can_work.start_feature`, and `can_work.heavy_model` are separate;
+- usage dashboard is LOW confidence;
+- consumers are explicitly out of scope;
+- no runtime, gateway, model, scheduler, alert, Telegram, Gmail, UI, or dashboard change is introduced.
+
+## Out Of Scope For V1 Contract
+
+- implementation of the aggregator;
+- visual dashboard;
+- Telegram feedback;
+- alerts;
+- scheduler;
+- runtime integration;
+- model fallback;
+- automatic corrective actions.
