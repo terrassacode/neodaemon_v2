@@ -54,3 +54,4 @@ cron/runs/
 
 # Local runtime memory
 memory/
+.env
