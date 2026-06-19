@@ -43,20 +43,28 @@ STDERR:
 EXIT_CODE:
 {r.returncode}
 """
-
 def handle(text):
     t = text.strip()
+    tl = t.lower()
 
-    if t.lower() in {"estado", "status"}:
+    if "donde estoy" in tl or "dónde estoy" in tl:
+        return run("pwd")
+
+    if "estado" in tl or tl == "status":
         return run("git status")
 
-    if t.lower() in {"busca jpg", "buscar jpg"}:
-        return run('find /openclaw -name "*.jpg" | head')
-
-    if t.lower() in {"lista imagenes", "listar imagenes", "lista imágenes"}:
+    if "lista" in tl and ("imagen" in tl or "imagenes" in tl or "imágenes" in tl):
         return run("find incoming_images -type f 2>/dev/null")
 
-    if t.lower().startswith("haz "):
+    if "busca" in tl and "jpg" in tl:
+        return run('find /openclaw -name "*.jpg" | head')
+
+    if "crea carpeta" in tl:
+        nombre = tl.replace("crea carpeta", "").strip()
+        if nombre:
+            return run(f'mkdir -p "{nombre}" && ls -ld "{nombre}"')
+
+    if tl.startswith("haz "):
         return run(t[4:])
 
     return run(t)
