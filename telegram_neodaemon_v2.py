@@ -4,7 +4,7 @@ import subprocess
 import requests
 from pathlib import Path
 
-ENV_FILE = Path("/openclaw/.env")
+ENV_FILE = Path("/openclaw/openclaw_v2/.env")
 WORKDIR = Path("/openclaw/openclaw_v2")
 
 def load_token():
