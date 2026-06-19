@@ -59,7 +59,7 @@ def handle(text):
     if t.lower().startswith("haz "):
         return run(t[4:])
 
-    return "No entiendo aún. Usa: estado, busca jpg, lista imagenes, o haz <comando>"
+    return run(t)
 
 def main():
     print("NeoDaemon V2 Telegram bot running")
