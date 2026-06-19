@@ -3,6 +3,7 @@ import time
 import subprocess
 import requests
 from pathlib import Path
+from main_handler_v2 import ask_main
 
 ENV_FILE = Path("/openclaw/openclaw_v2/.env")
 WORKDIR = Path("/openclaw/openclaw_v2")
@@ -47,27 +48,13 @@ def handle(text):
     t = text.strip()
     tl = t.lower()
 
-    if "donde estoy" in tl or "dónde estoy" in tl:
-        return run("pwd")
-
-    if "estado" in tl or tl == "status":
-        return run("git status")
-
-    if "lista" in tl and ("imagen" in tl or "imagenes" in tl or "imágenes" in tl):
-        return run("find incoming_images -type f 2>/dev/null")
-
-    if "busca" in tl and "jpg" in tl:
-        return run('find /openclaw -name "*.jpg" | head')
-
-    if "crea carpeta" in tl:
-        nombre = tl.replace("crea carpeta", "").strip()
-        if nombre:
-            return run(f'mkdir -p "{nombre}" && ls -ld "{nombre}"')
-
     if tl.startswith("haz "):
         return run(t[4:])
 
-    return run(t)
+    if tl in {"shell", "/shell"}:
+        return "Modo shell: escribe haz <comando>"
+
+    return ask_main(t)
 
 def main():
     print("NeoDaemon V2 Telegram bot running")
