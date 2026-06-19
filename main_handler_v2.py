@@ -51,7 +51,7 @@ Mensaje de Albert:
     result = subprocess.run(
         [
             "openclaw", "agent",
-            "--agent", "main",
+            "--agent", "neodaemon-v2",
             "--session-id", "telegram-v2-main",
             "--message", message,
             "--json",
