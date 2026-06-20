@@ -65,3 +65,41 @@ Los modelos y WAV no se versionan.
 - No incluye STT/micrófono todavía.
 - No clona voces.
 - No envía texto/audio fuera en runtime.
+
+## Voz → Nia → Voz revisada
+
+Flujo añadido para conversación por voz con revisión humana:
+
+1. Albert graba o escribe texto.
+2. El texto queda editable en el campo del dashboard.
+3. Botón `Enviar a Nia y escuchar`.
+4. Backend llama a `openclaw agent` con `--deliver` omitido, por tanto no envía a canales externos.
+5. La respuesta textual de Nia se convierte a WAV local con Piper.
+6. El dashboard reproduce el audio.
+
+Endpoint:
+
+```text
+POST /api/voice/ask-nia
+```
+
+Límites:
+
+- mensaje de entrada máximo: 1200 caracteres en backend;
+- respuesta para voz truncada a 800 caracteres antes de Piper si fuera necesario;
+- sesión agent por defecto: `voice-dashboard`;
+- agente por defecto: `neodaemon-v2`.
+
+Variables opcionales:
+
+```text
+VOICE_AGENT_ID
+VOICE_AGENT_SESSION
+```
+
+Seguridad:
+
+- no usa `--deliver`;
+- no publica en Telegram/Signal/WhatsApp/etc.;
+- no guarda secretos;
+- los WAV quedan en `data/voice/outputs`.

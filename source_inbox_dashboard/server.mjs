@@ -19,6 +19,8 @@ const VOICE_IN_DIR = path.resolve('/openclaw/openclaw_v2/data/voice/inputs');
 const PIPER_SCRIPT = path.resolve('/openclaw/openclaw_v2/voice_tools/piper_say.py');
 const STT_SCRIPT = path.resolve('/openclaw/openclaw_v2/voice_tools/transcribe_audio.py');
 const VOICE_PYTHON = path.resolve('/openclaw/openclaw_v2/voice_tools/.venv/bin/python');
+const VOICE_AGENT_ID = process.env.VOICE_AGENT_ID || 'neodaemon-v2';
+const VOICE_AGENT_SESSION = process.env.VOICE_AGENT_SESSION || 'voice-dashboard';
 
 const allowedMime = new Map([
   ['application/pdf', '.pdf'],
@@ -461,6 +463,83 @@ async function handleVoiceTts(req, res) {
   });
 }
 
+function extractAgentText(payload) {
+  const direct = payload?.result?.payloads?.find(item => typeof item?.text === 'string' && item.text.trim())?.text;
+  const metaVisible = payload?.result?.meta?.finalAssistantVisibleText;
+  const metaRaw = payload?.result?.meta?.finalAssistantRawText;
+  return String(direct || metaVisible || metaRaw || '').trim();
+}
+
+function voiceAgentPrompt(text) {
+  return [
+    'Mensaje recibido desde el panel de voz de Albert.',
+    'Responde en español, en primera persona como Nia, de forma natural y breve.',
+    'La respuesta se leerá en voz alta con Piper: máximo 700 caracteres, sin tablas y sin markdown pesado.',
+    '',
+    `Mensaje de Albert: ${text}`
+  ].join('\n');
+}
+
+async function createVoiceAudio(text) {
+  const outName = `${nowStamp()}_${crypto.randomUUID().slice(0, 8)}_nia.wav`;
+  const outPath = path.join(VOICE_OUT_DIR, outName);
+  const result = await runCommand('python3', [PIPER_SCRIPT, text, '--out', outPath], { cwd: REPO_ROOT, timeout: 120000 });
+  let payload = null;
+  try { payload = JSON.parse(result.stdout || '{}'); } catch { payload = null; }
+  if (!result.ok || !payload?.ok) {
+    return { ok: false, error: payload?.error || result.error || 'tts_failed', detail: payload || { stderr: result.stderr } };
+  }
+  return { ok: true, audioUrl: `/voice/outputs/${outName}`, output: payload.output, bytes: payload.bytes, textLength: payload.textLength };
+}
+
+async function handleVoiceAskNia(req, res) {
+  const data = JSON.parse((await readBody(req, 64 * 1024)).toString('utf8'));
+  const text = String(data.text || '').trim();
+  if (!text) return sendJson(res, 400, { ok: false, error: 'missing_text' });
+  if (text.length > 1200) return sendJson(res, 400, { ok: false, error: 'text_too_long', max: 1200 });
+  const prompt = voiceAgentPrompt(text);
+  const agent = await runCommand('openclaw', [
+    'agent',
+    '--agent', VOICE_AGENT_ID,
+    '--session-id', VOICE_AGENT_SESSION,
+    '--message', prompt,
+    '--thinking', 'off',
+    '--timeout', '180',
+    '--json'
+  ], { cwd: REPO_ROOT, timeout: 210000 });
+  let payload = null;
+  try { payload = JSON.parse(agent.stdout || '{}'); } catch { payload = null; }
+  const reply = extractAgentText(payload);
+  if (!agent.ok || payload?.status !== 'ok' || !reply) {
+    return sendJson(res, 503, {
+      ok: false,
+      error: agent.error || 'agent_failed',
+      hint: 'No se pudo obtener respuesta de Nia vía openclaw agent.',
+      detail: { status: payload?.status || null, stderr: agent.stderr }
+    });
+  }
+  const spokenText = reply.length > 800 ? `${reply.slice(0, 797)}...` : reply;
+  const audio = await createVoiceAudio(spokenText);
+  if (!audio.ok) {
+    return sendJson(res, 503, {
+      ok: false,
+      error: audio.error,
+      hint: 'Nia respondió, pero Piper no pudo generar audio.',
+      reply,
+      detail: audio.detail
+    });
+  }
+  return sendJson(res, 201, {
+    ok: true,
+    reply,
+    spokenText,
+    audioUrl: audio.audioUrl,
+    bytes: audio.bytes,
+    agent: { id: VOICE_AGENT_ID, session: VOICE_AGENT_SESSION },
+    createdAt: new Date().toISOString()
+  });
+}
+
 async function serveVoiceOutput(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const name = path.basename(url.pathname);
@@ -519,6 +598,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && req.url === '/api/url') return await handleUrl(req, res);
     if (req.method === 'POST' && req.url === '/api/voice/tts') return await handleVoiceTts(req, res);
     if (req.method === 'POST' && req.url === '/api/voice/listen') return await handleVoiceListen(req, res);
+    if (req.method === 'POST' && req.url === '/api/voice/ask-nia') return await handleVoiceAskNia(req, res);
     if (req.method === 'GET' && req.url.startsWith('/voice/outputs/')) return await serveVoiceOutput(req, res);
     if (req.method === 'GET' || req.method === 'HEAD') return await serveStatic(req, res);
     sendJson(res, 405, { ok: false, error: 'method_not_allowed' }, req);

@@ -184,6 +184,8 @@
         <textarea id="voiceText" name="text" maxlength="800" placeholder="Ej: Hola Albert, soy Nia." required></textarea>
         <button type="submit">Generar voz</button>
       </form>
+      <div class="hint-card">Revisa o edita el texto antes de mandarlo a Nia. La respuesta se leerá automáticamente.</div>
+      <button id="askNiaVoice" type="button">Enviar a Nia y escuchar</button>
       <p class="small">Límite: 800 caracteres. Los WAV quedan en <code>data/voice/outputs</code>.</p>
     </section>
     <section>
@@ -570,6 +572,7 @@ pttButton.addEventListener('click', async (e) => {
 });
 const voiceResult = document.querySelector('#voiceResult');
 const voiceAudio = document.querySelector('#voiceAudio');
+const askNiaVoiceButton = document.querySelector('#askNiaVoice');
 document.querySelector('#voiceForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   voiceResult.textContent = 'Generando voz local...';
@@ -588,6 +591,41 @@ document.querySelector('#voiceForm').addEventListener('submit', async (e) => {
     await voiceAudio.play().catch(() => {});
   } else {
     voiceResult.textContent = JSON.stringify(data, null, 2);
+  }
+});
+
+askNiaVoiceButton.addEventListener('click', async () => {
+  const text = document.querySelector('#voiceText').value.trim();
+  if (!text) {
+    voiceResult.textContent = 'Primero graba o escribe un mensaje para Nia.';
+    return;
+  }
+  askNiaVoiceButton.disabled = true;
+  askNiaVoiceButton.textContent = '🧠 Nia pensando...';
+  voiceResult.textContent = 'Enviando a Nia...';
+  voiceAudio.style.display = 'none';
+  voiceAudio.removeAttribute('src');
+  try {
+    const res = await fetch('/api/voice/ask-nia', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      voiceResult.textContent = data.reply;
+      voiceAudio.src = data.audioUrl;
+      voiceAudio.style.display = 'block';
+      askNiaVoiceButton.textContent = '🔊 Reproduciendo respuesta';
+      await voiceAudio.play().catch(() => {});
+    } else {
+      voiceResult.textContent = JSON.stringify(data, null, 2);
+    }
+  } catch (err) {
+    voiceResult.textContent = `Error enviando a Nia: ${err.message}`;
+  } finally {
+    askNiaVoiceButton.disabled = false;
+    askNiaVoiceButton.textContent = 'Enviar a Nia y escuchar';
   }
 });
 
