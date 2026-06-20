@@ -198,3 +198,16 @@
 - Decisión:
   - Tras merge/cleanup de cada FEATURE, `github-cicd` revisa dashboard Repositorio o fallback `git`/`gh`.
   - Si algo falla, emite `FEATURE_CLEANUP_ALERT`.
+
+## 2026-06-20 - Gmail Drafts v1
+
+- Feature creada:
+  - `docs/GMAIL_DRAFTS_V1.md`
+  - `gmail_v2/` scripts seguros
+  - `wiki/concepts/gmail-drafts-v1.md`
+- Estado:
+  - OAuth verificado.
+  - Token con refresh token presente.
+  - `list_drafts.py` funciona.
+- Regla:
+  - No enviar emails salvo orden exacta `ENVÍA AHORA`.
