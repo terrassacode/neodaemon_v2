@@ -7,3 +7,7 @@ outputs/
 *.mp3
 __pycache__/
 *.pyc
+inputs/
+*.webm
+*.m4a
+*.ogg

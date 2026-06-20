@@ -176,6 +176,9 @@
           <p class="small">Genera audio local con Piper. No usa APIs externas en runtime.</p>
         </div>
       </div>
+      <div class="hint-card">Mantén pulsado para hablar. Al soltar, el audio se transcribe localmente.</div>
+      <button id="pushToTalk" type="button">Mantener pulsado para hablar</button>
+      <pre id="voiceTranscript">Transcripción pendiente.</pre>
       <form id="voiceForm">
         <label for="voiceText">Texto a convertir en voz</label>
         <textarea id="voiceText" name="text" maxlength="800" placeholder="Ej: Hola Albert, soy Nia." required></textarea>
@@ -431,6 +434,49 @@ document.querySelector('#reminderForm').addEventListener('submit', async (e) => 
     result.textContent = JSON.stringify(data, null, 2);
   }
 });
+
+
+let mediaRecorder = null;
+let recordedChunks = [];
+const pttButton = document.querySelector('#pushToTalk');
+const voiceTranscript = document.querySelector('#voiceTranscript');
+async function startPushToTalk() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    voiceTranscript.textContent = 'Este navegador no permite micrófono aquí.';
+    return;
+  }
+  recordedChunks = [];
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  mediaRecorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : undefined });
+  mediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) recordedChunks.push(event.data); };
+  mediaRecorder.onstop = async () => {
+    stream.getTracks().forEach(track => track.stop());
+    const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+    const fd = new FormData();
+    fd.append('file', blob, 'ptt.webm');
+    voiceTranscript.textContent = 'Transcribiendo localmente...';
+    const res = await fetch('/api/voice/listen', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.ok) {
+      voiceTranscript.textContent = data.text || '(sin texto detectado)';
+      document.querySelector('#voiceText').value = data.text || '';
+    } else {
+      voiceTranscript.textContent = JSON.stringify(data, null, 2);
+    }
+  };
+  mediaRecorder.start();
+  pttButton.textContent = 'Escuchando... suelta para enviar';
+  pttButton.classList.add('active');
+}
+function stopPushToTalk() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+  pttButton.textContent = 'Mantener pulsado para hablar';
+  pttButton.classList.remove('active');
+}
+pttButton.addEventListener('pointerdown', async (e) => { e.preventDefault(); await startPushToTalk().catch(err => { voiceTranscript.textContent = `Error micrófono: ${err.message}`; }); });
+pttButton.addEventListener('pointerup', (e) => { e.preventDefault(); stopPushToTalk(); });
+pttButton.addEventListener('pointercancel', stopPushToTalk);
+pttButton.addEventListener('mouseleave', () => { if (mediaRecorder?.state === 'recording') stopPushToTalk(); });
 
 const voiceResult = document.querySelector('#voiceResult');
 const voiceAudio = document.querySelector('#voiceAudio');

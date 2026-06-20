@@ -48,3 +48,25 @@ data/voice/outputs/*.wav
 - No envía texto/audio fuera.
 - No guarda secretos.
 - Solo genera WAV local.
+
+## Push-to-talk STT
+
+Primer corte para entrada de voz:
+
+```bash
+voice_tools/transcribe_audio.py /ruta/audio.webm
+```
+
+Usa `faster-whisper` local en CPU/int8 y guarda modelos en:
+
+```text
+data/voice/stt-models/
+```
+
+El dashboard expone:
+
+```text
+POST /api/voice/listen
+```
+
+Este corte transcribe audio. La conexión automática con conversación Nia queda para la siguiente FEATURE.
