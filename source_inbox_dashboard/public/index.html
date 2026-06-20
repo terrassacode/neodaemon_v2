@@ -196,6 +196,7 @@
       <h2>Conversación</h2>
       <audio id="voiceAudio" controls style="width:100%; display:none"></audio>
       <pre id="voiceResult">Listo.</pre>
+      <div id="voiceMetrics" class="hint-card">Métricas: esperando prueba de voz.</div>
       <div id="voiceConversation" class="compact-scroll">Sin conversación todavía.</div>
     </section>
   </main>
@@ -564,6 +565,7 @@ async function stopPushToTalk() {
   const data = await res.json();
   if (data.ok) {
     voiceTranscript.textContent = data.text || '(sin texto detectado)';
+    showVoiceMetrics('transcripción', data.metrics, { model: data.model, duration: data.duration });
     document.querySelector('#voiceText').value = data.text || '';
     if (data.text) addVoiceTurn('Tú', data.text);
     if (voiceAutoSend.checked && transcriptionLooksGood(data.text)) {
@@ -597,6 +599,7 @@ pttButton.addEventListener('click', async (e) => {
 });
 const voiceResult = document.querySelector('#voiceResult');
 const voiceAudio = document.querySelector('#voiceAudio');
+const voiceMetrics = document.querySelector('#voiceMetrics');
 const askNiaVoiceButton = document.querySelector('#askNiaVoice');
 const replayNiaVoiceButton = document.querySelector('#replayNiaVoice');
 const voiceConversation = document.querySelector('#voiceConversation');
@@ -622,6 +625,19 @@ function addVoiceTurn(who, text) {
   item.textContent = `${who}: ${safeText}`;
   voiceConversation.prepend(item);
 }
+function formatMs(ms) {
+  return Number.isFinite(Number(ms)) ? `${(Number(ms) / 1000).toFixed(1)}s` : '—';
+}
+function showVoiceMetrics(label, metrics = {}, extra = {}) {
+  const parts = [];
+  if (metrics.sttMs != null) parts.push(`STT ${formatMs(metrics.sttMs)}`);
+  if (metrics.agentMs != null) parts.push(`Nia ${formatMs(metrics.agentMs)}`);
+  if (metrics.ttsMs != null) parts.push(`Piper ${formatMs(metrics.ttsMs)}`);
+  if (metrics.totalMs != null) parts.push(`total ${formatMs(metrics.totalMs)}`);
+  if (extra.model) parts.push(`modelo ${extra.model}`);
+  if (extra.duration != null) parts.push(`audio ${Number(extra.duration).toFixed(1)}s`);
+  voiceMetrics.textContent = `Métricas ${label}: ${parts.length ? parts.join(' · ') : 'sin datos'}`;
+}
 function transcriptionLooksGood(text) {
   const value = String(text || '').trim();
   if (value.length < 8) return false;
@@ -642,6 +658,7 @@ document.querySelector('#voiceForm').addEventListener('submit', async (e) => {
   const data = await res.json();
   if (data.ok) {
     voiceResult.textContent = `Audio generado (${data.bytes} bytes)`;
+    showVoiceMetrics('voz', data.metrics);
     voiceAudio.src = data.audioUrl;
     voiceAudio.style.display = 'block';
     await voiceAudio.play().catch(() => {});
@@ -672,6 +689,7 @@ async function askNiaAndSpeak() {
     const data = await res.json();
     if (data.ok) {
       voiceResult.textContent = data.reply;
+      showVoiceMetrics('respuesta', data.metrics);
       voiceAudio.src = data.audioUrl;
       voiceAudio.style.display = 'block';
       lastNiaReply = data.reply || '';

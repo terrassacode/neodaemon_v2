@@ -16,6 +16,7 @@ const GITHUB_REPO = 'terrassacode/neodaemon_v2';
 const SECRET_TOKEN_RE = new RegExp(`gho${'_'}[A-Za-z0-9_]+|github${'_'}pat${'_'}[A-Za-z0-9_]+`, 'g');
 const VOICE_OUT_DIR = path.resolve('/openclaw/openclaw_v2/data/voice/outputs');
 const VOICE_IN_DIR = path.resolve('/openclaw/openclaw_v2/data/voice/inputs');
+const VOICE_METRICS_FILE = path.resolve('/openclaw/openclaw_v2/data/voice/metrics.jsonl');
 const PIPER_SCRIPT = path.resolve('/openclaw/openclaw_v2/voice_tools/piper_say.py');
 const STT_SCRIPT = path.resolve('/openclaw/openclaw_v2/voice_tools/transcribe_audio.py');
 const VOICE_PYTHON = path.resolve('/openclaw/openclaw_v2/voice_tools/.venv/bin/python');
@@ -34,6 +35,26 @@ function nowStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
+function elapsedMs(start) {
+  return Math.round(Number(process.hrtime.bigint() - start) / 1e6);
+}
+
+async function appendVoiceMetric(item) {
+  const safe = {
+    createdAt: new Date().toISOString(),
+    kind: item.kind,
+    ok: Boolean(item.ok),
+    metrics: item.metrics || {},
+    model: item.model || null,
+    audioSeconds: item.audioSeconds ?? null,
+    inputBytes: item.inputBytes ?? null,
+    textLength: item.textLength ?? null,
+    replyLength: item.replyLength ?? null,
+    error: item.error || null
+  };
+  await fs.appendFile(VOICE_METRICS_FILE, JSON.stringify(safe) + '\n').catch(() => {});
+}
+
 function safeName(name) {
   const base = path.basename(String(name || 'source')).replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80);
   return base || 'source';
@@ -46,6 +67,7 @@ async function ensureDirs() {
   await fs.mkdir(path.join(DATA, 'meta'), { recursive: true });
   await fs.mkdir(VOICE_OUT_DIR, { recursive: true });
   await fs.mkdir(VOICE_IN_DIR, { recursive: true });
+  await fs.mkdir(path.dirname(VOICE_METRICS_FILE), { recursive: true });
 }
 
 
@@ -397,6 +419,7 @@ async function handleText(req, res) {
 
 
 async function handleVoiceListen(req, res) {
+  const totalStart = process.hrtime.bigint();
   const body = await readBody(req, 12 * 1024 * 1024);
   const part = filePart(parseMultipart(body, req.headers['content-type']));
   if (!part) return sendJson(res, 400, { ok: false, error: 'missing_audio' });
@@ -410,18 +433,24 @@ async function handleVoiceListen(req, res) {
   const audioPath = path.join(VOICE_IN_DIR, `${id}_ptt${ext}`);
   if (part.content.length < 1024) return sendJson(res, 400, { ok: false, error: 'audio_too_small', bytes: part.content.length });
   await fs.writeFile(audioPath, part.content, { flag: 'wx' });
+  const sttStart = process.hrtime.bigint();
   const result = await runCommand(VOICE_PYTHON, [STT_SCRIPT, audioPath, '--language', 'es'], { cwd: REPO_ROOT, timeout: 240000 });
+  const sttMs = elapsedMs(sttStart);
   let payload = null;
   try { payload = JSON.parse(result.stdout || '{}'); } catch { payload = null; }
+  const metrics = { sttMs, totalMs: elapsedMs(totalStart) };
   if (!result.ok || !payload?.ok) {
+    await appendVoiceMetric({ kind: 'stt', ok: false, metrics, inputBytes: part.content.length, error: payload?.error || result.error || 'stt_failed' });
     return sendJson(res, 503, {
       ok: false,
       error: payload?.error || result.error || 'stt_failed',
       hint: payload?.hint || 'Revisar faster-whisper/modelo/audio local.',
       detail: payload || { stderr: result.stderr },
-      audioPath
+      audioPath,
+      metrics
     });
   }
+  await appendVoiceMetric({ kind: 'stt', ok: true, metrics, model: payload.model, audioSeconds: payload.duration, inputBytes: part.content.length, textLength: payload.textLength });
   return sendJson(res, 201, {
     ok: true,
     text: payload.text,
@@ -429,6 +458,7 @@ async function handleVoiceListen(req, res) {
     languageProbability: payload.languageProbability,
     duration: payload.duration,
     model: payload.model,
+    metrics,
     textLength: payload.textLength,
     audioPath,
     createdAt: new Date().toISOString()
@@ -436,28 +466,35 @@ async function handleVoiceListen(req, res) {
 }
 
 async function handleVoiceTts(req, res) {
+  const totalStart = process.hrtime.bigint();
   const data = JSON.parse((await readBody(req, 64 * 1024)).toString('utf8'));
   const text = String(data.text || '').trim();
   if (!text) return sendJson(res, 400, { ok: false, error: 'missing_text' });
   if (text.length > 800) return sendJson(res, 400, { ok: false, error: 'text_too_long', max: 800 });
   const outName = `${nowStamp()}_${crypto.randomUUID().slice(0, 8)}_nia.wav`;
   const outPath = path.join(VOICE_OUT_DIR, outName);
+  const ttsStart = process.hrtime.bigint();
   const result = await runCommand('python3', [PIPER_SCRIPT, text, '--out', outPath], { cwd: REPO_ROOT, timeout: 120000 });
+  const metrics = { ttsMs: elapsedMs(ttsStart), totalMs: elapsedMs(totalStart) };
   let payload = null;
   try { payload = JSON.parse(result.stdout || '{}'); } catch { payload = null; }
   if (!result.ok || !payload?.ok) {
+    await appendVoiceMetric({ kind: 'tts', ok: false, metrics, textLength: text.length, error: payload?.error || result.error || 'tts_failed' });
     return sendJson(res, 503, {
       ok: false,
       error: payload?.error || result.error || 'tts_failed',
       hint: payload?.hint || 'Revisar instalación Piper/modelo local.',
-      detail: payload || { stderr: result.stderr }
+      detail: payload || { stderr: result.stderr },
+      metrics
     });
   }
+  await appendVoiceMetric({ kind: 'tts', ok: true, metrics, textLength: payload.textLength });
   return sendJson(res, 201, {
     ok: true,
     audioUrl: `/voice/outputs/${outName}`,
     output: payload.output,
     bytes: payload.bytes,
+    metrics,
     textLength: payload.textLength,
     createdAt: new Date().toISOString()
   });
@@ -481,23 +518,27 @@ function voiceAgentPrompt(text) {
 }
 
 async function createVoiceAudio(text) {
+  const ttsStart = process.hrtime.bigint();
   const outName = `${nowStamp()}_${crypto.randomUUID().slice(0, 8)}_nia.wav`;
   const outPath = path.join(VOICE_OUT_DIR, outName);
   const result = await runCommand('python3', [PIPER_SCRIPT, text, '--out', outPath], { cwd: REPO_ROOT, timeout: 120000 });
+  const metrics = { ttsMs: elapsedMs(ttsStart) };
   let payload = null;
   try { payload = JSON.parse(result.stdout || '{}'); } catch { payload = null; }
   if (!result.ok || !payload?.ok) {
-    return { ok: false, error: payload?.error || result.error || 'tts_failed', detail: payload || { stderr: result.stderr } };
+    return { ok: false, error: payload?.error || result.error || 'tts_failed', detail: payload || { stderr: result.stderr }, metrics };
   }
-  return { ok: true, audioUrl: `/voice/outputs/${outName}`, output: payload.output, bytes: payload.bytes, textLength: payload.textLength };
+  return { ok: true, audioUrl: `/voice/outputs/${outName}`, output: payload.output, bytes: payload.bytes, textLength: payload.textLength, metrics };
 }
 
 async function handleVoiceAskNia(req, res) {
+  const totalStart = process.hrtime.bigint();
   const data = JSON.parse((await readBody(req, 64 * 1024)).toString('utf8'));
   const text = String(data.text || '').trim();
   if (!text) return sendJson(res, 400, { ok: false, error: 'missing_text' });
   if (text.length > 1200) return sendJson(res, 400, { ok: false, error: 'text_too_long', max: 1200 });
   const prompt = voiceAgentPrompt(text);
+  const agentStart = process.hrtime.bigint();
   const agent = await runCommand('openclaw', [
     'agent',
     '--agent', VOICE_AGENT_ID,
@@ -507,34 +548,43 @@ async function handleVoiceAskNia(req, res) {
     '--timeout', '180',
     '--json'
   ], { cwd: REPO_ROOT, timeout: 210000 });
+  const agentMs = elapsedMs(agentStart);
   let payload = null;
   try { payload = JSON.parse(agent.stdout || '{}'); } catch { payload = null; }
   const reply = extractAgentText(payload);
   if (!agent.ok || payload?.status !== 'ok' || !reply) {
+    const metrics = { agentMs, totalMs: elapsedMs(totalStart) };
+    await appendVoiceMetric({ kind: 'ask-nia', ok: false, metrics, textLength: text.length, error: agent.error || 'agent_failed' });
     return sendJson(res, 503, {
       ok: false,
       error: agent.error || 'agent_failed',
       hint: 'No se pudo obtener respuesta de Nia vía openclaw agent.',
-      detail: { status: payload?.status || null, stderr: agent.stderr }
+      detail: { status: payload?.status || null, stderr: agent.stderr },
+      metrics
     });
   }
   const spokenText = reply.length > 800 ? `${reply.slice(0, 797)}...` : reply;
   const audio = await createVoiceAudio(spokenText);
+  const metrics = { agentMs, ttsMs: audio.metrics?.ttsMs || null, totalMs: elapsedMs(totalStart) };
   if (!audio.ok) {
+    await appendVoiceMetric({ kind: 'ask-nia', ok: false, metrics, textLength: text.length, replyLength: reply.length, error: audio.error });
     return sendJson(res, 503, {
       ok: false,
       error: audio.error,
       hint: 'Nia respondió, pero Piper no pudo generar audio.',
       reply,
-      detail: audio.detail
+      detail: audio.detail,
+      metrics
     });
   }
+  await appendVoiceMetric({ kind: 'ask-nia', ok: true, metrics, textLength: text.length, replyLength: reply.length });
   return sendJson(res, 201, {
     ok: true,
     reply,
     spokenText,
     audioUrl: audio.audioUrl,
     bytes: audio.bytes,
+    metrics,
     agent: { id: VOICE_AGENT_ID, session: VOICE_AGENT_SESSION },
     createdAt: new Date().toISOString()
   });
