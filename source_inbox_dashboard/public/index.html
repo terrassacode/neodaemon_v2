@@ -53,15 +53,15 @@
     .source-grid { display:grid; grid-template-columns: 1.1fr 1fr; gap:16px; align-items:start; }
     .full-span { grid-column: 1 / -1; }
     .hint-card { border:1px dashed rgba(147,197,253,.35); background:rgba(59,130,246,.08); border-radius:14px; padding:12px; color:#bfdbfe; }
-    .small { font-size: 0.92rem; color: var(--muted); }
+    .small { font-size: 0.92rem; color: var(--muted); overflow-wrap:anywhere; }
     .reminder { display: grid; grid-template-columns: 1fr auto; gap: 10px; border: 1px solid rgba(148,163,184,.16); border-radius: 12px; padding: 12px; margin: 8px 0; background: var(--panel2); }
     .reminder.done { opacity: .55; text-decoration: line-through; }
     .reminder button { width: auto; margin: 0; padding: 8px 10px; }
-    .repo-grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:14px; }
-    .repo-card { border:1px solid rgba(148,163,184,.16); background: linear-gradient(180deg, #162133, #0e1724); border-radius:16px; padding:16px; min-height:112px; }
+    .repo-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:14px; }
+    .repo-card { min-width:0; overflow:hidden; border:1px solid rgba(148,163,184,.16); background: linear-gradient(180deg, #162133, #0e1724); border-radius:16px; padding:16px; min-height:112px; }
     .repo-card h3 { margin:0 0 8px; font-size:.65rem; color:#aebdd0; text-transform:uppercase; letter-spacing:.06em; }
-    .repo-card .value { font-size:1.01rem; font-weight:900; letter-spacing:-.03em; word-break:break-word; }
-    .badge { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:5px 9px; font-size:.62rem; font-weight:800; background:#263244; color:#dbeafe; }
+    .repo-card .value { font-size:1.01rem; font-weight:900; letter-spacing:-.03em; word-break:break-word; overflow-wrap:anywhere; }
+    .badge { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:5px 9px; font-size:.62rem; font-weight:800; background:#263244; color:#dbeafe; max-width:100%; white-space:normal; }
     .badge.ok { background: rgba(34,197,94,.16); color:#86efac; }
     .badge.warn { background: rgba(234,179,8,.15); color:#fde68a; }
     .badge.fail { background: rgba(239,68,68,.16); color:#fca5a5; }
@@ -73,12 +73,14 @@
     .list { display:grid; gap:10px; }
     .scroll-list { max-height: 420px; overflow-y: auto; padding-right: 4px; }
     .compact-scroll { max-height: 330px; overflow-y:auto; padding-right:4px; }
-    .row { display:grid; grid-template-columns: 1fr auto; gap:12px; align-items:center; border:1px solid rgba(148,163,184,.16); border-radius:12px; background:var(--panel2); padding:12px; }
+    .row { min-width:0; display:grid; grid-template-columns: minmax(0, 1fr) auto; gap:12px; align-items:center; border:1px solid rgba(148,163,184,.16); border-radius:12px; background:var(--panel2); padding:12px; }
+    .row > * { min-width:0; overflow-wrap:anywhere; }
+    .row > :last-child { display:flex; justify-content:flex-end; align-items:center; gap:8px; flex-wrap:wrap; }
     .row:hover { border-color:rgba(147,197,253,.28); background:#111b2a; }
     .muted { color:var(--muted); }
     .toolbar { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
     .toolbar button { width:auto; margin:0; padding:9px 12px; }
-    @media (max-width: 900px) { .app-header, .source-grid, .repo-grid { grid-template-columns: 1fr; } .timeline { grid-template-columns: repeat(9, 120px); } .row { grid-template-columns: 1fr; } .scroll-list { max-height: 360px; } body { padding-top:16px; } }
+    @media (max-width: 900px) { .app-header, .source-grid { grid-template-columns: 1fr; } .repo-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); } .repo-card { padding:14px; min-height:96px; } .timeline { grid-template-columns: repeat(9, 120px); } .row { grid-template-columns: 1fr; } .row > :last-child { justify-content:flex-start; } .scroll-list { max-height: 360px; } body { padding:16px 10px 36px; } section, .panel { padding:14px; } }
   </style>
 </head>
 <body>
