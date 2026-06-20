@@ -147,14 +147,15 @@ function nextRepoAction({ dirty, branch, prs, mainSynced, githubOk }) {
 }
 
 async function handleRepoStatus(req, res) {
-  const [status, branchName, head, mainLocal, mainRemote, branches, prsRaw] = await Promise.all([
+  const [status, branchName, head, mainLocal, mainRemote, branches, remoteBranches, prsRaw] = await Promise.all([
     runCommand('git', ['status', '--short', '--branch']),
     runCommand('git', ['branch', '--show-current']),
     runCommand('git', ['rev-parse', '--short', 'HEAD']),
     runCommand('git', ['rev-parse', '--short', 'main']),
     runCommand('git', ['rev-parse', '--short', 'origin/main']),
     runCommand('git', ['branch', '--format=%(refname:short)|%(objectname:short)|%(committerdate:relative)']),
-    runCommand('gh', ['pr', 'list', '--repo', GITHUB_REPO, '--state', 'all', '--limit', '12', '--json', 'number,title,state,headRefName,baseRefName,url,isDraft,mergeable,updatedAt,statusCheckRollup'])
+    runCommand('git', ['branch', '-r', '--format=%(refname:short)|%(objectname:short)|%(committerdate:relative)']),
+    runCommand('gh', ['pr', 'list', '--repo', GITHUB_REPO, '--state', 'all', '--limit', '30', '--json', 'number,title,state,headRefName,baseRefName,url,isDraft,mergeable,updatedAt,statusCheckRollup'])
   ]);
   const parsedStatus = parseBranchStatus(status.stdout);
   const pending = safeLines(status.stdout).filter(line => !line.startsWith('##'));
@@ -176,12 +177,36 @@ async function handleRepoStatus(req, res) {
     checks: checkSummary(pr.statusCheckRollup),
     statusCheckRollup: pr.statusCheckRollup || []
   }));
-  const featureBranches = safeLines(branches.stdout, 50)
+  const localFeatureBranches = safeLines(branches.stdout, 50)
     .map(line => {
       const [name, sha, updated] = line.replace(/^\*\s*/, '').split('|');
-      return { name, sha, updated, hasPr: prs.some(pr => pr.branch === name) };
+      return { name, sha, updated, scope: 'local' };
     })
     .filter(item => item.name && item.name !== 'main' && item.name.startsWith('feature/'));
+  const remoteFeatureBranches = safeLines(remoteBranches.stdout, 80)
+    .map(line => {
+      const [rawName, sha, updated] = line.replace(/^\*\s*/, '').split('|');
+      const name = String(rawName || '').replace(/^origin\//, '');
+      return { name, sha, updated, scope: 'remote' };
+    })
+    .filter(item => item.name && item.name !== 'HEAD' && item.name !== 'main' && item.name.startsWith('feature/'));
+  const branchMap = new Map();
+  for (const item of [...localFeatureBranches, ...remoteFeatureBranches]) {
+    const existing = branchMap.get(item.name) || { name: item.name, sha: item.sha, updated: item.updated, local: false, remote: false, hasPr: false };
+    existing.local ||= item.scope === 'local';
+    existing.remote ||= item.scope === 'remote';
+    existing.sha ||= item.sha;
+    existing.updated ||= item.updated;
+    existing.hasPr = prs.some(pr => pr.branch === item.name);
+    branchMap.set(item.name, existing);
+  }
+  const featureBranches = [...branchMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const cleanupBranches = featureBranches
+    .map(item => {
+      const mergedPr = prs.find(pr => pr.branch === item.name && pr.state === 'MERGED');
+      return mergedPr ? { ...item, pr: { number: mergedPr.number, title: mergedPr.title, url: mergedPr.url, state: mergedPr.state } } : null;
+    })
+    .filter(Boolean);
   const dirty = pending.length > 0;
   const mainSynced = Boolean(mainLocal.ok && mainRemote.ok && mainLocal.stdout === mainRemote.stdout);
   sendJson(res, 200, {
@@ -202,6 +227,7 @@ async function handleRepoStatus(req, res) {
       synced: mainSynced
     },
     branches: featureBranches,
+    cleanupBranches,
     pullRequests: prs,
     github: { ok: prsRaw.ok, error: prsRaw.ok ? null : (prsRaw.stderr || prsRaw.error || 'gh_failed') },
     nextAction: nextRepoAction({ dirty, branch, prs, mainSynced, githubOk: prsRaw.ok })

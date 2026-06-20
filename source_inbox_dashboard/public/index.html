@@ -164,6 +164,12 @@
     </section>
 
     <section>
+      <h2>Ramas pendientes de limpieza</h2>
+      <p class="small">Ramas feature que siguen existiendo después de que su PR ya fue mergeado.</p>
+      <div id="repoCleanupBranches" class="list">Cargando...</div>
+    </section>
+
+    <section>
       <h2>Cambios locales pendientes</h2>
       <pre id="repoPending">Cargando...</pre>
     </section>
@@ -298,7 +304,16 @@ function renderRepoStatus(data) {
   }).join('') : '<p class="small">Sin pull requests recientes.</p>';
 
   const branches = data.branches || [];
-  document.querySelector('#repoBranches').innerHTML = branches.length ? branches.map(br => `<div class="row"><div><strong>${escapeHtml(br.name)}</strong><br><span class="muted">${escapeHtml(br.sha)} · ${escapeHtml(br.updated || '')}</span></div><div>${br.hasPr ? badge('con PR', 'info') : badge('sin PR', 'warn')}</div></div>`).join('') : '<p class="small">Sin ramas feature locales.</p>';
+  document.querySelector('#repoBranches').innerHTML = branches.length ? branches.map(br => {
+    const location = [br.local ? 'local' : null, br.remote ? 'remota' : null].filter(Boolean).join(' + ');
+    return `<div class="row"><div><strong>${escapeHtml(br.name)}</strong><br><span class="muted">${escapeHtml(br.sha)} · ${escapeHtml(br.updated || '')} · ${escapeHtml(location || 'sin ubicación')}</span></div><div>${br.hasPr ? badge('con PR', 'info') : badge('sin PR', 'warn')}</div></div>`;
+  }).join('') : '<p class="small">Sin ramas feature locales/remotas.</p>';
+
+  const cleanup = data.cleanupBranches || [];
+  document.querySelector('#repoCleanupBranches').innerHTML = cleanup.length ? cleanup.map(br => {
+    const location = [br.local ? 'local' : null, br.remote ? 'remota' : null].filter(Boolean).join(' + ');
+    return `<div class="row"><div><strong>${escapeHtml(br.name)}</strong><br><span class="muted">PR #${br.pr?.number || '—'} mergeado · ${escapeHtml(location || 'sin ubicación')}</span></div><div>${badge('limpiar', 'warn')} ${br.pr?.url ? `<a href="${br.pr.url}" target="_blank" rel="noreferrer">PR</a>` : ''}</div></div>`;
+  }).join('') : '<p class="small">Sin ramas pendientes de limpieza.</p>';
 
   const pending = data.local?.pending || [];
   document.querySelector('#repoPending').textContent = pending.length ? pending.join('\n') : 'Working tree limpio.';
@@ -316,6 +331,7 @@ async function loadRepoStatus() {
     next.textContent = `No se pudo cargar el estado: ${err.message}`;
     document.querySelector('#repoPrs').textContent = 'Error cargando PRs.';
     document.querySelector('#repoBranches').textContent = 'Error cargando ramas.';
+    document.querySelector('#repoCleanupBranches').textContent = 'Error cargando limpieza.';
   }
 }
 
