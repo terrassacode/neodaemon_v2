@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Source Inbox</title>
+  <style>
+    :root { --bg:#101318; --panel:#161b22; --panel2:#0f141b; --line:#2c3440; --text:#eef2f7; --muted:#9aa7b7; --blue:#2d6cdf; --green:#22c55e; --yellow:#eab308; --red:#ef4444; --violet:#8b5cf6; }
+    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 1080px; margin: 32px auto; padding: 0 16px; background: radial-gradient(circle at top left, #182235 0, var(--bg) 36%); color: var(--text); }
+    h1 { margin-bottom: 4px; }
+    p { color: #b9c2cf; }
+    section { border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin: 18px 0; background: rgba(22,27,34,.94); box-shadow: 0 18px 60px rgba(0,0,0,.18); }
+    label { display: block; margin: 10px 0 6px; font-weight: 650; }
+    input, textarea, button { width: 100%; box-sizing: border-box; border-radius: 10px; border: 1px solid #3a4452; padding: 10px; background: #0f141b; color: #eef2f7; }
+    textarea { min-height: 120px; resize: vertical; }
+    button { margin-top: 12px; background: var(--blue); border: 0; font-weight: 700; cursor: pointer; }
+    button:hover { background: #3f7df0; }
+    nav { display: flex; gap: 8px; margin: 18px 0; flex-wrap: wrap; }
+    nav button { width: auto; margin: 0; background: #253041; }
+    nav button.active { background: #2d6cdf; }
+    .screen { display: none; }
+    .screen.active { display: block; }
+    .reminder { display: grid; grid-template-columns: 1fr auto; gap: 10px; border: 1px solid #2c3440; border-radius: 10px; padding: 10px; margin: 8px 0; background: #0f141b; }
+    .reminder.done { opacity: .55; text-decoration: line-through; }
+    .reminder button { width: auto; margin: 0; padding: 8px 10px; }
+    pre { white-space: pre-wrap; background: #0b0f14; border-radius: 10px; padding: 12px; color: #cfe3ff; }
+    .small { font-size: 0.92rem; color: #9aa7b7; }
+    .hero { display:flex; align-items:flex-end; justify-content:space-between; gap:18px; margin-bottom:8px; }
+    .repo-grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:14px; }
+    .repo-card { border:1px solid var(--line); background: linear-gradient(180deg, #151c27, #101620); border-radius:16px; padding:16px; min-height:112px; }
+    .repo-card h3 { margin:0 0 8px; font-size:.95rem; color:#cbd5e1; }
+    .repo-card .value { font-size:1.35rem; font-weight:800; letter-spacing:-.02em; word-break:break-word; }
+    .badge { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:5px 9px; font-size:.82rem; font-weight:750; background:#263244; color:#dbeafe; }
+    .badge.ok { background: rgba(34,197,94,.16); color:#86efac; }
+    .badge.warn { background: rgba(234,179,8,.15); color:#fde68a; }
+    .badge.fail { background: rgba(239,68,68,.16); color:#fca5a5; }
+    .badge.info { background: rgba(45,108,223,.18); color:#bfdbfe; }
+    .next-action { border:1px solid rgba(45,108,223,.45); background: linear-gradient(135deg, rgba(45,108,223,.24), rgba(139,92,246,.12)); border-radius:18px; padding:18px; font-size:1.15rem; font-weight:800; }
+    .timeline { display:grid; grid-template-columns: repeat(9, minmax(84px,1fr)); gap:8px; overflow:auto; padding-bottom:4px; }
+    .step { border:1px solid var(--line); background:var(--panel2); border-radius:12px; padding:10px; min-height:58px; font-size:.82rem; color:#cbd5e1; }
+    .step.active { border-color:var(--blue); box-shadow: inset 0 0 0 1px rgba(45,108,223,.35); color:#fff; }
+    .list { display:grid; gap:10px; }
+    .row { display:grid; grid-template-columns: 1fr auto; gap:12px; align-items:center; border:1px solid var(--line); border-radius:12px; background:var(--panel2); padding:12px; }
+    .row a { color:#93c5fd; text-decoration:none; }
+    .row a:hover { text-decoration:underline; }
+    .muted { color:var(--muted); }
+    .toolbar { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+    .toolbar button { width:auto; margin:0; padding:9px 12px; }
+    @media (max-width: 820px) { .repo-grid { grid-template-columns: 1fr; } .hero { display:block; } .timeline { grid-template-columns: repeat(9, 120px); } .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>Source Inbox</h1>
+  <p>Sube PDFs, imágenes, texto y URLs para que Nia/NeoDaemon pueda acceder después.</p>
+
+  <nav>
+    <button class="active" data-screen="sources">Fuentes</button>
+    <button data-screen="reminders">Recordatorios</button>
+    <button data-screen="repo">Repositorio</button>
+  </nav>
+
+  <main id="sources" class="screen active">
+  <section>
+    <h2>Archivo PDF o imagen</h2>
+    <form id="fileForm">
+      <label for="file">Archivo</label>
+      <input id="file" name="file" type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/gif" required />
+      <button type="submit">Subir archivo</button>
+    </form>
+    <p class="small">Máximo 25 MB. No sobrescribe.</p>
+  </section>
+
+  <section>
+    <h2>Texto escrito</h2>
+    <form id="textForm">
+      <label for="title">Título</label>
+      <input id="title" name="title" placeholder="Ej: Nota CORECLAW" />
+      <label for="text">Texto</label>
+      <textarea id="text" name="text" required></textarea>
+      <button type="submit">Guardar texto</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>URL</h2>
+    <form id="urlForm">
+      <label for="url">URL</label>
+      <input id="url" name="url" type="url" placeholder="https://..." required />
+      <label for="urlNote">Nota opcional</label>
+      <textarea id="urlNote" name="note" placeholder="Por qué importa esta URL"></textarea>
+      <button type="submit">Guardar URL</button>
+    </form>
+    <p class="small">La URL se guarda. No se descarga automáticamente.</p>
+  </section>
+
+  <section>
+    <h2>Resultado</h2>
+    <pre id="result">Listo.</pre>
+  </section>
+  </main>
+
+  <main id="reminders" class="screen">
+    <section>
+      <h2>Recordatorios diarios</h2>
+      <form id="reminderForm">
+        <label for="reminderText">Recordatorio</label>
+        <input id="reminderText" name="text" placeholder="Ej: revisar facturas mañana" required />
+        <label for="reminderWhen">Cuándo</label>
+        <input id="reminderWhen" name="when" placeholder="hoy, mañana 10:00, cada día, viernes..." />
+        <label for="reminderPriority">Prioridad</label>
+        <select id="reminderPriority" name="priority">
+          <option value="normal">Normal</option>
+          <option value="high">Alta</option>
+          <option value="low">Baja</option>
+        </select>
+        <button type="submit">Guardar recordatorio</button>
+      </form>
+      <p class="small">Local. No envía nada fuera. Nia puede revisar esta lista cuando se lo pidas.</p>
+    </section>
+    <section>
+      <h2>Pendientes</h2>
+      <div id="reminderList">Cargando...</div>
+    </section>
+  </main>
+
+  <main id="repo" class="screen">
+    <section>
+      <div class="toolbar">
+        <div>
+          <h2>Repositorio</h2>
+          <p class="small">Vista solo lectura del flujo Git/GitHub. No hace push, merge ni borra ramas.</p>
+        </div>
+        <button id="repoRefresh" type="button">Refrescar</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Siguiente acción</h2>
+      <div id="repoNextAction" class="next-action">Cargando estado...</div>
+    </section>
+
+    <section>
+      <h2>Estado general</h2>
+      <div class="repo-grid">
+        <div class="repo-card"><h3>Repo</h3><div id="repoName" class="value">—</div><p id="repoUrl" class="small">—</p></div>
+        <div class="repo-card"><h3>Rama actual</h3><div id="repoBranch" class="value">—</div><p id="repoHead" class="small">—</p></div>
+        <div class="repo-card"><h3>Main</h3><div id="repoMain" class="value">—</div><p id="repoMainSha" class="small">—</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Timeline FEATURE</h2>
+      <div id="repoTimeline" class="timeline"></div>
+    </section>
+
+    <section>
+      <h2>Pull Requests</h2>
+      <div id="repoPrs" class="list">Cargando...</div>
+    </section>
+
+    <section>
+      <h2>Ramas feature</h2>
+      <div id="repoBranches" class="list">Cargando...</div>
+    </section>
+
+    <section>
+      <h2>Ramas pendientes de limpieza</h2>
+      <p class="small">Ramas feature que siguen existiendo después de que su PR ya fue mergeado.</p>
+      <div id="repoCleanupBranches" class="list">Cargando...</div>
+    </section>
+
+    <section>
+      <h2>Cambios locales pendientes</h2>
+      <pre id="repoPending">Cargando...</pre>
+    </section>
+  </main>
+
+<script>
+const result = document.querySelector('#result');
+async function postJson(path, body) {
+  const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  result.textContent = JSON.stringify(data, null, 2);
+}
+document.querySelector('#fileForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const res = await fetch('/api/upload', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (data.ok) {
+    result.textContent = 'Archivo subido';
+    e.target.reset();
+  } else {
+    result.textContent = JSON.stringify(data, null, 2);
+  }
+});
+document.querySelector('#textForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const res = await fetch('/api/text', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: e.target.title.value, text: e.target.text.value })
+  });
+  const data = await res.json();
+  if (data.ok) {
+    result.textContent = 'Texto subido';
+    e.target.reset();
+  } else {
+    result.textContent = JSON.stringify(data, null, 2);
+  }
+});
+document.querySelector('#urlForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const res = await fetch('/api/url', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ url: e.target.url.value, note: e.target.note.value })
+  });
+  const data = await res.json();
+  if (data.ok) {
+    result.textContent = 'URL subida';
+    e.target.reset();
+  } else {
+    result.textContent = JSON.stringify(data, null, 2);
+  }
+});
+
+async function loadReminders() {
+  const box = document.querySelector('#reminderList');
+  const res = await fetch('/api/reminders');
+  const data = await res.json();
+  if (!data.ok) { box.textContent = 'Error cargando recordatorios'; return; }
+  if (!data.items.length) { box.textContent = 'Sin recordatorios.'; return; }
+  box.innerHTML = '';
+  for (const item of data.items) {
+    const div = document.createElement('div');
+    div.className = 'reminder' + (item.done ? ' done' : '');
+    const left = document.createElement('div');
+    left.innerHTML = `<strong>${item.text}</strong><br><span class="small">${item.when || 'sin fecha'} · ${item.priority}</span>`;
+    div.appendChild(left);
+    if (!item.done) {
+      const btn = document.createElement('button');
+      btn.textContent = 'Hecho';
+      btn.onclick = async () => {
+        await fetch('/api/reminders/complete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: item.id }) });
+        await loadReminders();
+      };
+      div.appendChild(btn);
+    }
+    box.appendChild(div);
+  }
+}
+
+function badge(text, kind = 'info') {
+  return `<span class="badge ${kind}">${text}</span>`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"]/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[ch]));
+}
+
+function activeTimelineStep(data) {
+  if (!data?.github?.ok) return 'BLOQUEO';
+  const openPr = (data.pullRequests || []).find(pr => pr.state === 'OPEN');
+  if (openPr) {
+    if (openPr.checks?.state === 'pending') return 'CI';
+    if (openPr.checks?.state === 'fail') return 'CI';
+    return 'MERGE';
+  }
+  const mergedPr = (data.pullRequests || []).find(pr => pr.state === 'MERGED');
+  if (mergedPr && data.local?.branch !== 'main') return 'CLEANUP';
+  if (data.local?.branch && data.local.branch !== 'main') return data.local.dirty ? 'BRANCH' : 'COMMIT';
+  if (data.local?.dirty) return 'FEATURE';
+  return 'LISTO';
+}
+
+function renderTimeline(data) {
+  const steps = ['FEATURE', 'OK FEATURE', 'BRANCH', 'COMMIT', 'OK GITHUB', 'PR', 'CI', 'MERGE', 'CLEANUP'];
+  const active = activeTimelineStep(data);
+  const activeIndex = steps.indexOf(active);
+  document.querySelector('#repoTimeline').innerHTML = steps.map((step, index) => {
+    const isActive = step === active;
+    const isDone = activeIndex > -1 && index < activeIndex;
+    const label = isActive ? 'paso actual' : isDone ? 'completado' : 'pendiente';
+    return `<div class="step ${isActive ? 'active' : ''}"><strong>${step}</strong><br><span class="muted">${label}</span></div>`;
+  }).join('');
+}
+
+function renderRepoStatus(data) {
+  document.querySelector('#repoNextAction').textContent = data.nextAction || 'Sin recomendación';
+  document.querySelector('#repoName').textContent = data.repo?.name || '—';
+  document.querySelector('#repoUrl').innerHTML = data.repo?.url ? `<a href="${data.repo.url}" target="_blank" rel="noreferrer">${data.repo.url}</a>` : '—';
+  document.querySelector('#repoBranch').innerHTML = `${escapeHtml(data.local?.branch || '—')} ${data.local?.dirty ? badge('cambios', 'warn') : badge('limpio', 'ok')}`;
+  document.querySelector('#repoHead').textContent = data.local?.head ? `HEAD ${data.local.head}` : 'HEAD desconocido';
+  document.querySelector('#repoMain').innerHTML = data.main?.synced ? `${badge('sincronizado', 'ok')}` : `${badge('desfasado', 'warn')}`;
+  document.querySelector('#repoMainSha').textContent = `local ${data.main?.local || '—'} · origin ${data.main?.remote || '—'}`;
+
+  renderTimeline(data);
+
+  const prs = data.pullRequests || [];
+  document.querySelector('#repoPrs').innerHTML = prs.length ? prs.map(pr => {
+    const kind = pr.state === 'MERGED' ? 'ok' : pr.checks?.state === 'fail' ? 'fail' : pr.checks?.state === 'pending' ? 'warn' : 'info';
+    return `<div class="row"><div><strong>#${pr.number} · ${escapeHtml(pr.title)}</strong><br><span class="muted">${escapeHtml(pr.branch)} → ${escapeHtml(pr.base)} · ${escapeHtml(pr.state)} · checks: ${escapeHtml(pr.checks?.label || '—')}</span></div><div>${badge(pr.mergeable || pr.state, kind)} <a href="${pr.url}" target="_blank" rel="noreferrer">abrir</a></div></div>`;
+  }).join('') : '<p class="small">Sin pull requests recientes.</p>';
+
+  const branches = data.branches || [];
+  document.querySelector('#repoBranches').innerHTML = branches.length ? branches.map(br => {
+    const location = [br.local ? 'local' : null, br.remote ? 'remota' : null].filter(Boolean).join(' + ');
+    return `<div class="row"><div><strong>${escapeHtml(br.name)}</strong><br><span class="muted">${escapeHtml(br.sha)} · ${escapeHtml(br.updated || '')} · ${escapeHtml(location || 'sin ubicación')}</span></div><div>${br.hasPr ? badge('con PR', 'info') : badge('sin PR', 'warn')}</div></div>`;
+  }).join('') : '<p class="small">Sin ramas feature locales/remotas.</p>';
+
+  const cleanup = data.cleanupBranches || [];
+  document.querySelector('#repoCleanupBranches').innerHTML = cleanup.length ? cleanup.map(br => {
+    const location = [br.local ? 'local' : null, br.remote ? 'remota' : null].filter(Boolean).join(' + ');
+    return `<div class="row"><div><strong>${escapeHtml(br.name)}</strong><br><span class="muted">PR #${br.pr?.number || '—'} mergeado · ${escapeHtml(location || 'sin ubicación')}</span></div><div>${badge('limpiar', 'warn')} ${br.pr?.url ? `<a href="${br.pr.url}" target="_blank" rel="noreferrer">PR</a>` : ''}</div></div>`;
+  }).join('') : '<p class="small">Sin ramas pendientes de limpieza.</p>';
+
+  const pending = data.local?.pending || [];
+  document.querySelector('#repoPending').textContent = pending.length ? pending.join('\n') : 'Working tree limpio.';
+}
+
+async function loadRepoStatus() {
+  const next = document.querySelector('#repoNextAction');
+  next.textContent = 'Cargando estado del repositorio...';
+  try {
+    const res = await fetch('/api/repo/status');
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'repo_status_failed');
+    renderRepoStatus(data);
+  } catch (err) {
+    next.textContent = `No se pudo cargar el estado: ${err.message}`;
+    document.querySelector('#repoPrs').textContent = 'Error cargando PRs.';
+    document.querySelector('#repoBranches').textContent = 'Error cargando ramas.';
+    document.querySelector('#repoCleanupBranches').textContent = 'Error cargando limpieza.';
+  }
+}
+
+document.querySelectorAll('nav button').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.screen).classList.add('active');
+    if (btn.dataset.screen === 'reminders') await loadReminders();
+    if (btn.dataset.screen === 'repo') await loadRepoStatus();
+  });
+});
+
+document.querySelector('#repoRefresh').addEventListener('click', loadRepoStatus);
+
+document.querySelector('#reminderForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const res = await fetch('/api/reminders', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: e.target.text.value, when: e.target.when.value, priority: e.target.priority.value })
+  });
+  const data = await res.json();
+  if (data.ok) {
+    result.textContent = 'Recordatorio guardado';
+    e.target.reset();
+    await loadReminders();
+  } else {
+    result.textContent = JSON.stringify(data, null, 2);
+  }
+});
+loadReminders();
+
+</script>
+</body>
+</html>

@@ -175,3 +175,15 @@
 - Objetivo:
   - Explicar cómo trabaja OpenClaw V2 con Nia, `gpt-critical` y `github-cicd`.
   - Formalizar `OK FEATURE` y `OK GITHUB`.
+
+## 2026-06-20 - Repo Flow Dashboard Plan v1
+
+- Feature documental creada:
+  - `docs/REPO_FLOW_DASHBOARD_PLAN_V1.md`
+- Nota wiki creada:
+  - `wiki/concepts/repo-flow-dashboard-plan-v1.md`
+- Decisión:
+  - MVP propio dentro del dashboard local.
+  - Backend usa `git` + `gh`.
+  - Frontend solo recibe estado saneado.
+  - v1 solo lectura.
