@@ -86,9 +86,10 @@ function runImageTools(filePath, id) {
   })();
 }
 
-function sendJson(res, status, data) {
+function sendJson(res, status, data, req = null) {
   const body = JSON.stringify(data, null, 2);
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
+  if (req?.method === 'HEAD') return res.end();
   res.end(body);
 }
 
@@ -493,13 +494,14 @@ async function serveStatic(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const rel = url.pathname === '/' ? '/index.html' : url.pathname;
   const filePath = path.resolve(PUBLIC, '.' + rel);
-  if (!filePath.startsWith(PUBLIC)) return sendJson(res, 403, { ok: false, error: 'forbidden' });
+  if (!filePath.startsWith(PUBLIC)) return sendJson(res, 403, { ok: false, error: 'forbidden' }, req);
   try {
     const body = await fs.readFile(filePath);
     res.writeHead(200, { 'content-type': filePath.endsWith('.html') ? 'text/html; charset=utf-8' : 'application/octet-stream' });
+    if (req.method === 'HEAD') return res.end();
     res.end(body);
   } catch {
-    sendJson(res, 404, { ok: false, error: 'not_found' });
+    sendJson(res, 404, { ok: false, error: 'not_found' }, req);
   }
 }
 
@@ -516,8 +518,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && req.url === '/api/voice/tts') return await handleVoiceTts(req, res);
     if (req.method === 'POST' && req.url === '/api/voice/listen') return await handleVoiceListen(req, res);
     if (req.method === 'GET' && req.url.startsWith('/voice/outputs/')) return await serveVoiceOutput(req, res);
-    if (req.method === 'GET') return await serveStatic(req, res);
-    sendJson(res, 405, { ok: false, error: 'method_not_allowed' });
+    if (req.method === 'GET' || req.method === 'HEAD') return await serveStatic(req, res);
+    sendJson(res, 405, { ok: false, error: 'method_not_allowed' }, req);
   } catch (err) {
     sendJson(res, err.message === 'body_too_large' ? 413 : 500, { ok: false, error: err.message });
   }

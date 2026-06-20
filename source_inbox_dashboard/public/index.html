@@ -441,8 +441,8 @@ let recordedChunks = [];
 const pttButton = document.querySelector('#pushToTalk');
 const voiceTranscript = document.querySelector('#voiceTranscript');
 async function startPushToTalk() {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    voiceTranscript.textContent = 'Este navegador no permite micrófono aquí.';
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    voiceTranscript.textContent = 'El micrófono necesita HTTPS o localhost. Abre el dashboard por HTTPS vía Tailscale Serve, no por http://100.x.x.x:8788.';
     return;
   }
   recordedChunks = [];
