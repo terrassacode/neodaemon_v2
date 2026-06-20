@@ -258,8 +258,11 @@ function activeTimelineStep(data) {
   const openPr = (data.pullRequests || []).find(pr => pr.state === 'OPEN');
   if (openPr) {
     if (openPr.checks?.state === 'pending') return 'CI';
-    return 'PR';
+    if (openPr.checks?.state === 'fail') return 'CI';
+    return 'MERGE';
   }
+  const mergedPr = (data.pullRequests || []).find(pr => pr.state === 'MERGED');
+  if (mergedPr && data.local?.branch !== 'main') return 'CLEANUP';
   if (data.local?.branch && data.local.branch !== 'main') return data.local.dirty ? 'BRANCH' : 'COMMIT';
   if (data.local?.dirty) return 'FEATURE';
   return 'LISTO';
@@ -268,7 +271,13 @@ function activeTimelineStep(data) {
 function renderTimeline(data) {
   const steps = ['FEATURE', 'OK FEATURE', 'BRANCH', 'COMMIT', 'OK GITHUB', 'PR', 'CI', 'MERGE', 'CLEANUP'];
   const active = activeTimelineStep(data);
-  document.querySelector('#repoTimeline').innerHTML = steps.map(step => `<div class="step ${step === active ? 'active' : ''}"><strong>${step}</strong><br><span class="muted">${step === active ? 'paso actual' : '—'}</span></div>`).join('');
+  const activeIndex = steps.indexOf(active);
+  document.querySelector('#repoTimeline').innerHTML = steps.map((step, index) => {
+    const isActive = step === active;
+    const isDone = activeIndex > -1 && index < activeIndex;
+    const label = isActive ? 'paso actual' : isDone ? 'completado' : 'pendiente';
+    return `<div class="step ${isActive ? 'active' : ''}"><strong>${step}</strong><br><span class="muted">${label}</span></div>`;
+  }).join('');
 }
 
 function renderRepoStatus(data) {
