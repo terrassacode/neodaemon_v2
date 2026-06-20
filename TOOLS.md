@@ -83,6 +83,13 @@ Incluye aquí solo dónde viven las cosas, no su contenido completo.
 - Logs: `[RUTA_LOGS]`
 - Base de datos o mirror local: `[RUTA_DB_LOCAL]`
 
+### Gmail / correo saliente
+
+- Cuenta propia del asistente: `claw.neodaemon@gmail.com`
+- Uso previsto: correo saliente de Nia/NeoDaemon cuando Albert lo pida o lo apruebe.
+- Regla: no guardar contraseñas, refresh tokens ni secretos completos en este archivo.
+- Envíos externos: requieren confirmación previa salvo que Albert configure explícitamente una política controlada de autonomía.
+
 ## Infraestructura local
 
 ### Hosts y aliases

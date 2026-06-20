@@ -32,6 +32,7 @@ Principios duraderos:
 - PR Guardian valida hechos.
 - SSH puede usarse para diagnóstico rápido.
 - Cambios permanentes deben pasar por rama, PR, validación y rollback.
+- Ante peticiones nuevas de Albert, usar el flujo de comunicación/revisión entre agentes cuando aporte calidad: Nia formula/afina la petición, GPT crítico revisa una vez, y luego Nia ejecuta o propone el siguiente paso claro.
 
 ## Image Inbox
 
