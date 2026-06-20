@@ -436,48 +436,125 @@ document.querySelector('#reminderForm').addEventListener('submit', async (e) => 
 });
 
 
-let mediaRecorder = null;
-let recordedChunks = [];
+let audioContext = null;
+let audioStream = null;
+let audioSource = null;
+let audioProcessor = null;
+let audioChunks = [];
+let recordingStartedAt = 0;
+const MIN_RECORDING_MS = 900;
+const MAX_RECORDING_MS = 30000;
+const MIN_WAV_BYTES = 8000;
 const pttButton = document.querySelector('#pushToTalk');
 const voiceTranscript = document.querySelector('#voiceTranscript');
+
+function encodeWav(samples, sampleRate) {
+  const bytesPerSample = 2;
+  const blockAlign = bytesPerSample;
+  const buffer = new ArrayBuffer(44 + samples.length * bytesPerSample);
+  const view = new DataView(buffer);
+  const writeString = (offset, text) => {
+    for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
+  };
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * bytesPerSample, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, samples.length * bytesPerSample, true);
+  let offset = 44;
+  for (const sample of samples) {
+    const clipped = Math.max(-1, Math.min(1, sample));
+    view.setInt16(offset, clipped < 0 ? clipped * 0x8000 : clipped * 0x7fff, true);
+    offset += 2;
+  }
+  return new Blob([view], { type: 'audio/wav' });
+}
+
+function mergeAudioChunks(chunks) {
+  const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const merged = new Float32Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return merged;
+}
+
 async function startPushToTalk() {
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
     voiceTranscript.textContent = 'El micrófono necesita HTTPS o localhost. Abre el dashboard por HTTPS vía Tailscale Serve, no por http://100.x.x.x:8788.';
     return;
   }
-  recordedChunks = [];
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  mediaRecorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : undefined });
-  mediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) recordedChunks.push(event.data); };
-  mediaRecorder.onstop = async () => {
-    stream.getTracks().forEach(track => track.stop());
-    const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-    const fd = new FormData();
-    fd.append('file', blob, 'ptt.webm');
-    voiceTranscript.textContent = 'Transcribiendo localmente...';
-    const res = await fetch('/api/voice/listen', { method: 'POST', body: fd });
-    const data = await res.json();
-    if (data.ok) {
-      voiceTranscript.textContent = data.text || '(sin texto detectado)';
-      document.querySelector('#voiceText').value = data.text || '';
-    } else {
-      voiceTranscript.textContent = JSON.stringify(data, null, 2);
-    }
+  if (audioContext) return;
+  audioChunks = [];
+  audioStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
+  audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  audioSource = audioContext.createMediaStreamSource(audioStream);
+  audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+  audioProcessor.onaudioprocess = (event) => {
+    const input = event.inputBuffer.getChannelData(0);
+    audioChunks.push(new Float32Array(input));
+    if (Date.now() - recordingStartedAt > MAX_RECORDING_MS) stopPushToTalk();
   };
-  mediaRecorder.start();
-  pttButton.textContent = 'Escuchando... suelta para enviar';
+  audioSource.connect(audioProcessor);
+  audioProcessor.connect(audioContext.destination);
+  recordingStartedAt = Date.now();
+  pttButton.textContent = 'Grabando... suelta para transcribir';
   pttButton.classList.add('active');
+  voiceTranscript.textContent = 'Grabando audio local...';
 }
-function stopPushToTalk() {
-  if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+
+async function stopPushToTalk() {
+  if (!audioContext) return;
+  const elapsed = Date.now() - recordingStartedAt;
+  const context = audioContext;
+  const sampleRate = context.sampleRate;
+  const chunks = audioChunks;
+  audioProcessor?.disconnect();
+  audioSource?.disconnect();
+  audioStream?.getTracks().forEach(track => track.stop());
+  await context.close().catch(() => {});
+  audioContext = null;
+  audioStream = null;
+  audioSource = null;
+  audioProcessor = null;
   pttButton.textContent = 'Mantener pulsado para hablar';
   pttButton.classList.remove('active');
+  if (elapsed < MIN_RECORDING_MS) {
+    voiceTranscript.textContent = 'Mantén pulsado un poco más antes de soltar.';
+    return;
+  }
+  const samples = mergeAudioChunks(chunks);
+  const wav = encodeWav(samples, sampleRate);
+  if (wav.size < MIN_WAV_BYTES) {
+    voiceTranscript.textContent = 'No se capturó audio suficiente. Mantén pulsado y habla cerca del micrófono.';
+    return;
+  }
+  const fd = new FormData();
+  fd.append('file', wav, 'ptt.wav');
+  voiceTranscript.textContent = 'Transcribiendo localmente...';
+  const res = await fetch('/api/voice/listen', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (data.ok) {
+    voiceTranscript.textContent = data.text || '(sin texto detectado)';
+    document.querySelector('#voiceText').value = data.text || '';
+  } else {
+    voiceTranscript.textContent = JSON.stringify(data, null, 2);
+  }
 }
 pttButton.addEventListener('pointerdown', async (e) => { e.preventDefault(); await startPushToTalk().catch(err => { voiceTranscript.textContent = `Error micrófono: ${err.message}`; }); });
 pttButton.addEventListener('pointerup', (e) => { e.preventDefault(); stopPushToTalk(); });
 pttButton.addEventListener('pointercancel', stopPushToTalk);
-pttButton.addEventListener('mouseleave', () => { if (mediaRecorder?.state === 'recording') stopPushToTalk(); });
-
+pttButton.addEventListener('mouseleave', () => { if (audioContext) stopPushToTalk(); });
 const voiceResult = document.querySelector('#voiceResult');
 const voiceAudio = document.querySelector('#voiceAudio');
 document.querySelector('#voiceForm').addEventListener('submit', async (e) => {

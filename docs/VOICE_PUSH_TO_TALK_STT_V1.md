@@ -52,3 +52,22 @@ No se versionan modelos ni audios grabados.
 - Transcripción observada: `Hola Albert, esta es una prueba de transcripción local.`
 
 Nota: el backend usa `voice_tools/.venv/bin/python` para garantizar que `faster-whisper` esté disponible.
+
+## WAV recorder update
+
+El grabador push-to-talk usa WebAudio para generar WAV mono PCM en el navegador antes de subirlo al servidor.
+
+Motivo:
+
+- En Chrome/Android, `MediaRecorder` con `audio/webm;codecs=opus` puede generar archivos WebM incompletos si la grabación es corta.
+- `faster-whisper`/PyAV lee WAV PCM de forma más estable.
+
+Límites cliente:
+
+- mínimo aproximado: 900 ms;
+- máximo aproximado: 30 s;
+- tamaño mínimo WAV antes de enviar.
+
+Validación servidor:
+
+- rechaza audio demasiado pequeño antes de llamar a STT.
