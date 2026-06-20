@@ -143,3 +143,36 @@ queda listo para hablar otra vez
 - Botón `Pausar modo automático` para desactivar el autoenvío.
 
 No incluye modo escucha continua. Ese paso queda separado por seguridad y estabilidad.
+
+## Métricas de latencia y calidad v1
+
+Instrumentación para decidir mejoras de voz con datos reales.
+
+Respuestas de endpoints incluyen `metrics`:
+
+- `/api/voice/listen`
+  - `sttMs`
+  - `totalMs`
+  - modelo STT
+  - duración del audio
+- `/api/voice/ask-nia`
+  - `agentMs`
+  - `ttsMs`
+  - `totalMs`
+- `/api/voice/tts`
+  - `ttsMs`
+  - `totalMs`
+
+El dashboard muestra una línea tipo:
+
+```text
+Métricas respuesta: Nia 4.2s · Piper 1.1s · total 5.4s
+```
+
+Log local mínimo:
+
+```text
+data/voice/metrics.jsonl
+```
+
+No guarda texto, audio ni secretos. Solo métricas técnicas: tipo, ok/error, tiempos, modelo, duración, tamaños y longitudes.
