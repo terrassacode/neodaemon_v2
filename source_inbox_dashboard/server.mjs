@@ -406,6 +406,7 @@ async function handleVoiceListen(req, res) {
   const ext = mime.includes('wav') ? '.wav' : mime.includes('mpeg') ? '.mp3' : mime.includes('mp4') ? '.m4a' : mime.includes('ogg') ? '.ogg' : '.webm';
   const id = `${nowStamp()}_${crypto.randomUUID().slice(0, 8)}`;
   const audioPath = path.join(VOICE_IN_DIR, `${id}_ptt${ext}`);
+  if (part.content.length < 1024) return sendJson(res, 400, { ok: false, error: 'audio_too_small', bytes: part.content.length });
   await fs.writeFile(audioPath, part.content, { flag: 'wx' });
   const result = await runCommand(VOICE_PYTHON, [STT_SCRIPT, audioPath, '--language', 'es'], { cwd: REPO_ROOT, timeout: 240000 });
   let payload = null;
