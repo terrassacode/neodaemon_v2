@@ -103,3 +103,16 @@ Seguridad:
 - no publica en Telegram/Signal/WhatsApp/etc.;
 - no guarda secretos;
 - los WAV quedan en `data/voice/outputs`.
+
+## Modo conversación v1
+
+Mejora del flujo de voz para reducir fricción sin perder control humano:
+
+- botón principal `🎙️ Hablar con Nia`;
+- grabación toggle: pulsar para grabar, pulsar para transcribir;
+- historial corto en pantalla con turnos `Tú` / `Nia`;
+- botón `Repetir última respuesta`;
+- checkbox `Autoenviar si la transcripción parece buena`, apagado por defecto;
+- el texto transcrito sigue siendo editable antes de enviarlo.
+
+La regla de seguridad sigue igual: no se activa modo manos libres total por defecto.
