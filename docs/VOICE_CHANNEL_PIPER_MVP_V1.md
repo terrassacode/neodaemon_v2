@@ -116,3 +116,30 @@ Mejora del flujo de voz para reducir fricción sin perder control humano:
 - el texto transcrito sigue siendo editable antes de enviarlo.
 
 La regla de seguridad sigue igual: no se activa modo manos libres total por defecto.
+
+## Modo manos libres controlado v1
+
+Mejora del modo conversación sin activar escucha continua ni detección automática de silencio:
+
+- `Autoenviar transcripciones buenas` queda apagado por defecto.
+- Si se activa, el flujo es:
+
+```text
+pulsar → grabar
+pulsar → transcribir
+si la transcripción parece buena → enviar a Nia
+Nia responde → Piper reproduce
+queda listo para hablar otra vez
+```
+
+- Si la transcripción parece dudosa, no se envía automáticamente y queda para revisión.
+- Estado visible del flujo:
+  - `Listo para hablar`
+  - `Escuchando`
+  - `Transcribiendo`
+  - `Nia pensando`
+  - `Hablando`
+  - `Listo para hablar otra vez`
+- Botón `Pausar modo automático` para desactivar el autoenvío.
+
+No incluye modo escucha continua. Ese paso queda separado por seguridad y estabilidad.
