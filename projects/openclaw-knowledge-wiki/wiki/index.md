@@ -13,6 +13,7 @@
 
 ## Conceptos
 
+- [Repo Flow Dashboard Plan v1](concepts/repo-flow-dashboard-plan-v1.md)
 - [Working Flow Feature v1](concepts/working-flow-feature-v1.md)
 - [GitHub CI/CD Agent Flow](concepts/github-cicd-agent-flow.md)
 - [GPT Critical Reviewer v1](concepts/gpt-critical-reviewer-v1.md)
