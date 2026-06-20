@@ -231,6 +231,21 @@ This is a starting point. Add your own conventions, style, and rules as you figu
 
 - [Default AGENTS.md](/reference/AGENTS.default)
 
+## GPT crítico de una sola pasada
+
+Para tareas no triviales, de seguridad, arquitectura, automatización o efectos duraderos, aplica el protocolo:
+
+- `docs/GPT_CRITICAL_REVIEWER_V1.md`
+
+Regla esencial:
+
+```text
+Nia propone acción → GPT crítico revisa una vez → Nia decide plan final → ejecución → evidencia
+```
+
+Prohibido entrar en bucles de revisión entre Nia y GPT.
+Si tras una pasada no hay claridad, devolver `NECESITA_ALBERT` con una sola pregunta o bloqueo concreto.
+
 ---
 
 # OpenClaw Bunker - Core Operating Rules
@@ -558,3 +573,29 @@ Recuerda lo que importa seguir sabiendo.
 - `[LECCION_OPERATIVA_DURADERA_1]`
 - `[LECCION_OPERATIVA_DURADERA_2]`
 - `[LECCION_OPERATIVA_DURADERA_3]`
+
+
+## GitHub CI/CD Agent
+
+El agente real `github-cicd` gestiona flujo Git/GitHub controlado para peticiones que requieran rama, validación, commit, PR y seguimiento de CI.
+
+Referencia operativa:
+
+- `docs/GITHUB_CICD_AGENT_V1.md`
+
+Enrutado obligatorio:
+
+- si una petición implica publicar cambios en GitHub, abrir PR, revisar CI, preparar rama/commit o sincronizar `main`, usar el flujo `github-cicd`;
+- Nia puede preparar la petición, pero `github-cicd` debe ordenar el ciclo Git/GitHub;
+- no convertir tareas triviales sin GitHub en flujo CI/CD;
+- mantener máximo dos aprobaciones humanas normales: `OK FEATURE` y `OK GITHUB`.
+
+Reglas esenciales:
+
+- no trabajar en `main`;
+- no push/PR sin `OK GITHUB`;
+- no merge automático;
+- no tocar secretos;
+- no usar `git add .` ni `git add -A`;
+- aplicar revisión crítica antes de `FEATURE_PROPOSAL`;
+- cerrar con evidencia real.

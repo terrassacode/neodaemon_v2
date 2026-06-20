@@ -55,3 +55,16 @@ cron/runs/
 # Local runtime memory
 memory/
 .env
+# Node dependencies
+node_modules/
+**/node_modules/
+# Local V2 runtime data / inbox artifacts
+drafts/
+# Generated OCR/PDF/image outputs
+*.ocr.txt
+*.extracted.txt
+# Local source inbox/runtime storage
+data/
+/data/
+source_inbox_dashboard/node_modules/
+image_tools/node_modules/
