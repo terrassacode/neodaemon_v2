@@ -178,14 +178,16 @@
       </div>
       <div class="hint-card">Pulsa para grabar. Pulsa otra vez para parar. Revisa el texto y envíalo a Nia cuando esté bien.</div>
       <button id="pushToTalk" type="button">🎙️ Hablar con Nia</button>
+      <div id="voiceStatus" class="next-action">Listo para hablar.</div>
       <pre id="voiceTranscript">Transcripción pendiente.</pre>
-      <label class="small"><input id="voiceAutoSend" type="checkbox"> Autoenviar si la transcripción parece buena</label>
+      <label class="small"><input id="voiceAutoSend" type="checkbox"> Autoenviar transcripciones buenas</label>
+      <button id="pauseVoiceAuto" type="button" disabled>Pausar modo automático</button>
       <form id="voiceForm">
         <label for="voiceText">Mensaje para Nia / texto a convertir en voz</label>
         <textarea id="voiceText" name="text" maxlength="800" placeholder="Ej: Hola Nia, dime si me escuchas." required></textarea>
         <button type="submit">Generar voz sin enviar a Nia</button>
       </form>
-      <div class="hint-card">Modo seguro: el autoenvío está apagado por defecto. Puedes editar antes de enviar.</div>
+      <div class="hint-card">Modo seguro: el autoenvío está apagado por defecto. Si está activado y la transcripción parece dudosa, se queda esperando revisión.</div>
       <button id="askNiaVoice" type="button">Enviar a Nia y escuchar</button>
       <button id="replayNiaVoice" type="button" disabled>Repetir última respuesta</button>
       <p class="small">Límite: 800 caracteres. Los WAV quedan en <code>data/voice/outputs</code>.</p>
@@ -452,6 +454,10 @@ const MAX_RECORDING_MS = 30000;
 const MIN_WAV_BYTES = 8000;
 const pttButton = document.querySelector('#pushToTalk');
 const voiceTranscript = document.querySelector('#voiceTranscript');
+const voiceStatus = document.querySelector('#voiceStatus');
+function setVoiceStatus(text) {
+  voiceStatus.textContent = text;
+}
 
 function encodeWav(samples, sampleRate) {
   const bytesPerSample = 2;
@@ -496,6 +502,7 @@ function mergeAudioChunks(chunks) {
 
 async function startPushToTalk() {
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    setVoiceStatus('Micrófono no disponible.');
     voiceTranscript.textContent = 'El micrófono necesita HTTPS o localhost. Abre el dashboard por HTTPS vía Tailscale Serve, no por http://100.x.x.x:8788.';
     return;
   }
@@ -515,6 +522,7 @@ async function startPushToTalk() {
   recordingStartedAt = Date.now();
   pttButton.textContent = '🔴 Grabando... pulsa para transcribir';
   pttButton.classList.add('active');
+  setVoiceStatus('Escuchando...');
   voiceTranscript.textContent = 'Grabando audio local...';
 }
 
@@ -535,12 +543,14 @@ async function stopPushToTalk() {
   pttButton.textContent = '🎙️ Hablar con Nia';
   pttButton.classList.remove('active');
   if (elapsed < MIN_RECORDING_MS) {
+    setVoiceStatus('Grabación demasiado corta.');
     voiceTranscript.textContent = 'Mantén pulsado un poco más antes de soltar.';
     return;
   }
   const samples = mergeAudioChunks(chunks);
   const wav = encodeWav(samples, sampleRate);
   if (wav.size < MIN_WAV_BYTES) {
+    setVoiceStatus('Audio insuficiente.');
     voiceTranscript.textContent = 'No se capturó audio suficiente. Mantén pulsado y habla cerca del micrófono.';
     return;
   }
@@ -548,6 +558,7 @@ async function stopPushToTalk() {
   fd.append('file', wav, 'ptt.wav');
   pttButton.textContent = '⏳ Transcribiendo...';
   pttButton.disabled = true;
+  setVoiceStatus('Transcribiendo...');
   voiceTranscript.textContent = 'Transcribiendo localmente...';
   const res = await fetch('/api/voice/listen', { method: 'POST', body: fd });
   const data = await res.json();
@@ -556,9 +567,15 @@ async function stopPushToTalk() {
     document.querySelector('#voiceText').value = data.text || '';
     if (data.text) addVoiceTurn('Tú', data.text);
     if (voiceAutoSend.checked && transcriptionLooksGood(data.text)) {
+      setVoiceStatus('Transcripción buena. Enviando a Nia...');
       await askNiaAndSpeak();
+    } else if (voiceAutoSend.checked) {
+      setVoiceStatus('Transcripción dudosa. Revisa antes de enviar.');
+    } else {
+      setVoiceStatus('Transcripción lista para revisar.');
     }
   } else {
+    setVoiceStatus('Error transcribiendo.');
     voiceTranscript.textContent = JSON.stringify(data, null, 2);
   }
   pttButton.disabled = false;
@@ -573,6 +590,7 @@ pttButton.addEventListener('click', async (e) => {
     await startPushToTalk().catch(err => {
       pttButton.disabled = false;
       pttButton.textContent = '🎙️ Hablar con Nia';
+      setVoiceStatus('Error de micrófono.');
       voiceTranscript.textContent = `Error micrófono: ${err.message}`;
     });
   }
@@ -583,6 +601,16 @@ const askNiaVoiceButton = document.querySelector('#askNiaVoice');
 const replayNiaVoiceButton = document.querySelector('#replayNiaVoice');
 const voiceConversation = document.querySelector('#voiceConversation');
 const voiceAutoSend = document.querySelector('#voiceAutoSend');
+const pauseVoiceAutoButton = document.querySelector('#pauseVoiceAuto');
+voiceAutoSend.addEventListener('change', () => {
+  pauseVoiceAutoButton.disabled = !voiceAutoSend.checked;
+  setVoiceStatus(voiceAutoSend.checked ? 'Modo automático activado. Pulsa para hablar.' : 'Modo automático pausado. Revisa antes de enviar.');
+});
+pauseVoiceAutoButton.addEventListener('click', () => {
+  voiceAutoSend.checked = false;
+  pauseVoiceAutoButton.disabled = true;
+  setVoiceStatus('Modo automático pausado.');
+});
 let lastNiaAudioUrl = '';
 let lastNiaReply = '';
 function addVoiceTurn(who, text) {
@@ -629,7 +657,9 @@ async function askNiaAndSpeak() {
     return;
   }
   askNiaVoiceButton.disabled = true;
+  pttButton.disabled = true;
   askNiaVoiceButton.textContent = '🧠 Nia pensando...';
+  setVoiceStatus('Nia pensando...');
   voiceResult.textContent = 'Enviando a Nia...';
   voiceAudio.style.display = 'none';
   voiceAudio.removeAttribute('src');
@@ -649,14 +679,19 @@ async function askNiaAndSpeak() {
       replayNiaVoiceButton.disabled = !lastNiaAudioUrl;
       addVoiceTurn('Nia', data.reply);
       askNiaVoiceButton.textContent = '🔊 Reproduciendo respuesta';
+      setVoiceStatus('Hablando...');
       await voiceAudio.play().catch(() => {});
+      setVoiceStatus('Listo para hablar otra vez.');
     } else {
+      setVoiceStatus('Error recibiendo respuesta de Nia.');
       voiceResult.textContent = JSON.stringify(data, null, 2);
     }
   } catch (err) {
+    setVoiceStatus('Error enviando a Nia.');
     voiceResult.textContent = `Error enviando a Nia: ${err.message}`;
   } finally {
     askNiaVoiceButton.disabled = false;
+    pttButton.disabled = false;
     askNiaVoiceButton.textContent = 'Enviar a Nia y escuchar';
   }
 }
@@ -664,9 +699,11 @@ askNiaVoiceButton.addEventListener('click', askNiaAndSpeak);
 replayNiaVoiceButton.addEventListener('click', async () => {
   if (!lastNiaAudioUrl) return;
   voiceResult.textContent = lastNiaReply || 'Repitiendo última respuesta.';
+  setVoiceStatus('Repitiendo última respuesta...');
   voiceAudio.src = lastNiaAudioUrl;
   voiceAudio.style.display = 'block';
   await voiceAudio.play().catch(() => {});
+  setVoiceStatus('Listo para hablar otra vez.');
 });
 
 loadReminders();
