@@ -22,6 +22,7 @@ const STT_SCRIPT = path.resolve('/openclaw/openclaw_v2/voice_tools/transcribe_au
 const VOICE_PYTHON = path.resolve('/openclaw/openclaw_v2/voice_tools/.venv/bin/python');
 const VOICE_AGENT_ID = process.env.VOICE_AGENT_ID || 'neodaemon-v2';
 const VOICE_AGENT_SESSION = process.env.VOICE_AGENT_SESSION || 'voice-dashboard';
+const ALLOWED_STT_MODELS = new Set(['base', 'small', 'medium']);
 
 const allowedMime = new Map([
   ['application/pdf', '.pdf'],
@@ -420,6 +421,9 @@ async function handleText(req, res) {
 
 async function handleVoiceListen(req, res) {
   const totalStart = process.hrtime.bigint();
+  const url = new URL(req.url, 'http://localhost');
+  const requestedModel = String(url.searchParams.get('model') || 'small').trim().toLowerCase();
+  if (!ALLOWED_STT_MODELS.has(requestedModel)) return sendJson(res, 400, { ok: false, error: 'unsupported_stt_model', model: requestedModel, allowed: [...ALLOWED_STT_MODELS] });
   const body = await readBody(req, 12 * 1024 * 1024);
   const part = filePart(parseMultipart(body, req.headers['content-type']));
   if (!part) return sendJson(res, 400, { ok: false, error: 'missing_audio' });
@@ -434,7 +438,7 @@ async function handleVoiceListen(req, res) {
   if (part.content.length < 1024) return sendJson(res, 400, { ok: false, error: 'audio_too_small', bytes: part.content.length });
   await fs.writeFile(audioPath, part.content, { flag: 'wx' });
   const sttStart = process.hrtime.bigint();
-  const result = await runCommand(VOICE_PYTHON, [STT_SCRIPT, audioPath, '--language', 'es'], { cwd: REPO_ROOT, timeout: 240000 });
+  const result = await runCommand(VOICE_PYTHON, [STT_SCRIPT, audioPath, '--language', 'es', '--model', requestedModel], { cwd: REPO_ROOT, timeout: 240000 });
   const sttMs = elapsedMs(sttStart);
   let payload = null;
   try { payload = JSON.parse(result.stdout || '{}'); } catch { payload = null; }
@@ -639,17 +643,18 @@ async function serveStatic(req, res) {
 await ensureDirs();
 const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === 'GET' && req.url === '/api/reminders') return await handleListReminders(req, res);
-    if (req.method === 'GET' && req.url === '/api/repo/status') return await handleRepoStatus(req, res);
-    if (req.method === 'POST' && req.url === '/api/reminders') return await handleAddReminder(req, res);
-    if (req.method === 'POST' && req.url === '/api/reminders/complete') return await handleCompleteReminder(req, res);
-    if (req.method === 'POST' && req.url === '/api/upload') return await handleUpload(req, res);
-    if (req.method === 'POST' && req.url === '/api/text') return await handleText(req, res);
-    if (req.method === 'POST' && req.url === '/api/url') return await handleUrl(req, res);
-    if (req.method === 'POST' && req.url === '/api/voice/tts') return await handleVoiceTts(req, res);
-    if (req.method === 'POST' && req.url === '/api/voice/listen') return await handleVoiceListen(req, res);
-    if (req.method === 'POST' && req.url === '/api/voice/ask-nia') return await handleVoiceAskNia(req, res);
-    if (req.method === 'GET' && req.url.startsWith('/voice/outputs/')) return await serveVoiceOutput(req, res);
+    const pathname = new URL(req.url, 'http://localhost').pathname;
+    if (req.method === 'GET' && pathname === '/api/reminders') return await handleListReminders(req, res);
+    if (req.method === 'GET' && pathname === '/api/repo/status') return await handleRepoStatus(req, res);
+    if (req.method === 'POST' && pathname === '/api/reminders') return await handleAddReminder(req, res);
+    if (req.method === 'POST' && pathname === '/api/reminders/complete') return await handleCompleteReminder(req, res);
+    if (req.method === 'POST' && pathname === '/api/upload') return await handleUpload(req, res);
+    if (req.method === 'POST' && pathname === '/api/text') return await handleText(req, res);
+    if (req.method === 'POST' && pathname === '/api/url') return await handleUrl(req, res);
+    if (req.method === 'POST' && pathname === '/api/voice/tts') return await handleVoiceTts(req, res);
+    if (req.method === 'POST' && pathname === '/api/voice/listen') return await handleVoiceListen(req, res);
+    if (req.method === 'POST' && pathname === '/api/voice/ask-nia') return await handleVoiceAskNia(req, res);
+    if (req.method === 'GET' && pathname.startsWith('/voice/outputs/')) return await serveVoiceOutput(req, res);
     if (req.method === 'GET' || req.method === 'HEAD') return await serveStatic(req, res);
     sendJson(res, 405, { ok: false, error: 'method_not_allowed' }, req);
   } catch (err) {
