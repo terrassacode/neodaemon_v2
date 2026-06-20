@@ -97,6 +97,7 @@
     <button class="active" data-screen="sources">Fuentes</button>
     <button data-screen="reminders">Recordatorios</button>
     <button data-screen="repo">Repositorio</button>
+    <button data-screen="voice">Voz</button>
   </nav>
 
   <main id="sources" class="screen active">
@@ -163,6 +164,29 @@
     <section>
       <h2>Pendientes</h2>
       <div id="reminderList" class="compact-scroll">Cargando...</div>
+    </section>
+  </main>
+
+
+  <main id="voice" class="screen">
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>Voz de Nia</h2>
+          <p class="small">Genera audio local con Piper. No usa APIs externas en runtime.</p>
+        </div>
+      </div>
+      <form id="voiceForm">
+        <label for="voiceText">Texto a convertir en voz</label>
+        <textarea id="voiceText" name="text" maxlength="800" placeholder="Ej: Hola Albert, soy Nia." required></textarea>
+        <button type="submit">Generar voz</button>
+      </form>
+      <p class="small">Límite: 800 caracteres. Los WAV quedan en <code>data/voice/outputs</code>.</p>
+    </section>
+    <section>
+      <h2>Resultado de voz</h2>
+      <audio id="voiceAudio" controls style="width:100%; display:none"></audio>
+      <pre id="voiceResult">Listo.</pre>
     </section>
   </main>
 
@@ -407,6 +431,30 @@ document.querySelector('#reminderForm').addEventListener('submit', async (e) => 
     result.textContent = JSON.stringify(data, null, 2);
   }
 });
+
+const voiceResult = document.querySelector('#voiceResult');
+const voiceAudio = document.querySelector('#voiceAudio');
+document.querySelector('#voiceForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  voiceResult.textContent = 'Generando voz local...';
+  voiceAudio.style.display = 'none';
+  voiceAudio.removeAttribute('src');
+  const res = await fetch('/api/voice/tts', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: e.target.text.value })
+  });
+  const data = await res.json();
+  if (data.ok) {
+    voiceResult.textContent = `Audio generado (${data.bytes} bytes)`;
+    voiceAudio.src = data.audioUrl;
+    voiceAudio.style.display = 'block';
+    await voiceAudio.play().catch(() => {});
+  } else {
+    voiceResult.textContent = JSON.stringify(data, null, 2);
+  }
+});
+
 loadReminders();
 
 </script>
