@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path('/openclaw/openclaw_v2')
 MODEL_DIR = ROOT / 'data' / 'voice' / 'stt-models'
-DEFAULT_MODEL = 'base'
+DEFAULT_MODEL = 'small'
 
 
 def main() -> int:

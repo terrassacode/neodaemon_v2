@@ -57,7 +57,7 @@ Primer corte para entrada de voz:
 voice_tools/transcribe_audio.py /ruta/audio.webm
 ```
 
-Usa `faster-whisper` local en CPU/int8 y guarda modelos en:
+Usa `faster-whisper` local en CPU/int8. Modelo recomendado por defecto: `small` y guarda modelos en:
 
 ```text
 data/voice/stt-models/
@@ -70,3 +70,21 @@ POST /api/voice/listen
 ```
 
 Este corte transcribe audio. La conexión automática con conversación Nia queda para la siguiente FEATURE.
+
+## Calidad STT
+
+El modelo por defecto es `small`.
+
+Motivo: en pruebas reales de voz de Albert, `base` transcribió `probando` como `furovando`, mientras que `small` produjo una transcripción correcta.
+
+Tradeoff:
+
+- `small`: mejor calidad, algo más lento.
+- `base`: más rápido, peor precisión.
+
+Para forzar otro modelo:
+
+```bash
+voice_tools/transcribe_audio.py /ruta/audio.wav --model base
+voice_tools/transcribe_audio.py /ruta/audio.wav --model small
+```
