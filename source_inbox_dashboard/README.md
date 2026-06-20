@@ -58,3 +58,23 @@ http://100.117.135.114:8788
 - limita uploads a 25 MB;
 - acepta solo PDF e imágenes permitidas;
 - URLs se guardan como texto/metadata, no se visitan automáticamente.
+
+## Voz local
+
+El dashboard incluye una pestaña `Voz` para generar audio local con Piper TTS.
+
+Requisitos:
+
+```text
+voice_tools/.venv/
+data/voice/piper-models/voice.onnx
+data/voice/piper-models/voice.onnx.json
+```
+
+Los WAV se generan en:
+
+```text
+/openclaw/openclaw_v2/data/voice/outputs
+```
+
+No usa APIs externas en runtime.

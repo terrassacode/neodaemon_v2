@@ -1,0 +1,9 @@
+.venv/
+models/
+outputs/
+*.onnx
+*.onnx.json
+*.wav
+*.mp3
+__pycache__/
+*.pyc

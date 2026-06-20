@@ -14,6 +14,8 @@ const REMINDERS_FILE = '/openclaw/openclaw_v2/data/daily-reminders/reminders.jso
 const REPO_ROOT = path.resolve('/openclaw/openclaw_v2');
 const GITHUB_REPO = 'terrassacode/neodaemon_v2';
 const SECRET_TOKEN_RE = new RegExp(`gho${'_'}[A-Za-z0-9_]+|github${'_'}pat${'_'}[A-Za-z0-9_]+`, 'g');
+const VOICE_OUT_DIR = path.resolve('/openclaw/openclaw_v2/data/voice/outputs');
+const PIPER_SCRIPT = path.resolve('/openclaw/openclaw_v2/voice_tools/piper_say.py');
 
 const allowedMime = new Map([
   ['application/pdf', '.pdf'],
@@ -37,6 +39,7 @@ async function ensureDirs() {
   await fs.mkdir(path.join(DATA, 'texts'), { recursive: true });
   await fs.mkdir(path.join(DATA, 'urls'), { recursive: true });
   await fs.mkdir(path.join(DATA, 'meta'), { recursive: true });
+  await fs.mkdir(VOICE_OUT_DIR, { recursive: true });
 }
 
 
@@ -384,6 +387,50 @@ async function handleText(req, res) {
   sendJson(res, 201, { ok: true, item: meta, metaPath });
 }
 
+
+async function handleVoiceTts(req, res) {
+  const data = JSON.parse((await readBody(req, 64 * 1024)).toString('utf8'));
+  const text = String(data.text || '').trim();
+  if (!text) return sendJson(res, 400, { ok: false, error: 'missing_text' });
+  if (text.length > 800) return sendJson(res, 400, { ok: false, error: 'text_too_long', max: 800 });
+  const outName = `${nowStamp()}_${crypto.randomUUID().slice(0, 8)}_nia.wav`;
+  const outPath = path.join(VOICE_OUT_DIR, outName);
+  const result = await runCommand('python3', [PIPER_SCRIPT, text, '--out', outPath], { cwd: REPO_ROOT, timeout: 120000 });
+  let payload = null;
+  try { payload = JSON.parse(result.stdout || '{}'); } catch { payload = null; }
+  if (!result.ok || !payload?.ok) {
+    return sendJson(res, 503, {
+      ok: false,
+      error: payload?.error || result.error || 'tts_failed',
+      hint: payload?.hint || 'Revisar instalación Piper/modelo local.',
+      detail: payload || { stderr: result.stderr }
+    });
+  }
+  return sendJson(res, 201, {
+    ok: true,
+    audioUrl: `/voice/outputs/${outName}`,
+    output: payload.output,
+    bytes: payload.bytes,
+    textLength: payload.textLength,
+    createdAt: new Date().toISOString()
+  });
+}
+
+async function serveVoiceOutput(req, res) {
+  const url = new URL(req.url, 'http://localhost');
+  const name = path.basename(url.pathname);
+  if (!/^[A-Za-z0-9._-]+\.wav$/.test(name)) return sendJson(res, 400, { ok: false, error: 'invalid_audio_name' });
+  const filePath = path.resolve(VOICE_OUT_DIR, name);
+  if (!filePath.startsWith(VOICE_OUT_DIR)) return sendJson(res, 403, { ok: false, error: 'forbidden' });
+  try {
+    const body = await fs.readFile(filePath);
+    res.writeHead(200, { 'content-type': 'audio/wav', 'cache-control': 'no-store' });
+    res.end(body);
+  } catch {
+    sendJson(res, 404, { ok: false, error: 'not_found' });
+  }
+}
+
 async function handleUrl(req, res) {
   const data = JSON.parse((await readBody(req, 256 * 1024)).toString('utf8'));
   const url = String(data.url || '').trim();
@@ -424,6 +471,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && req.url === '/api/upload') return await handleUpload(req, res);
     if (req.method === 'POST' && req.url === '/api/text') return await handleText(req, res);
     if (req.method === 'POST' && req.url === '/api/url') return await handleUrl(req, res);
+    if (req.method === 'POST' && req.url === '/api/voice/tts') return await handleVoiceTts(req, res);
+    if (req.method === 'GET' && req.url.startsWith('/voice/outputs/')) return await serveVoiceOutput(req, res);
     if (req.method === 'GET') return await serveStatic(req, res);
     sendJson(res, 405, { ok: false, error: 'method_not_allowed' });
   } catch (err) {
