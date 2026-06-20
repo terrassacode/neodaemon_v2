@@ -71,3 +71,14 @@ Límites cliente:
 Validación servidor:
 
 - rechaza audio demasiado pequeño antes de llamar a STT.
+
+## Modelo STT recomendado
+
+El modelo por defecto pasa a ser `small`.
+
+Evidencia con audio real de Albert:
+
+- `base`: `Hola, uno, dos, uno, dos, furovando.`
+- `small`: `¡Hola! 1-2-1-2. ¡Probando!`
+
+Conclusión: `small` mejora claramente la calidad para el caso de uso de voz directa.
