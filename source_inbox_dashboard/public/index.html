@@ -176,22 +176,25 @@
           <p class="small">Genera audio local con Piper. No usa APIs externas en runtime.</p>
         </div>
       </div>
-      <div class="hint-card">Pulsa una vez para empezar a grabar. Pulsa otra vez para parar y transcribir.</div>
-      <button id="pushToTalk" type="button">🎙️ Hablar</button>
+      <div class="hint-card">Pulsa para grabar. Pulsa otra vez para parar. Revisa el texto y envíalo a Nia cuando esté bien.</div>
+      <button id="pushToTalk" type="button">🎙️ Hablar con Nia</button>
       <pre id="voiceTranscript">Transcripción pendiente.</pre>
+      <label class="small"><input id="voiceAutoSend" type="checkbox"> Autoenviar si la transcripción parece buena</label>
       <form id="voiceForm">
-        <label for="voiceText">Texto a convertir en voz</label>
-        <textarea id="voiceText" name="text" maxlength="800" placeholder="Ej: Hola Albert, soy Nia." required></textarea>
-        <button type="submit">Generar voz</button>
+        <label for="voiceText">Mensaje para Nia / texto a convertir en voz</label>
+        <textarea id="voiceText" name="text" maxlength="800" placeholder="Ej: Hola Nia, dime si me escuchas." required></textarea>
+        <button type="submit">Generar voz sin enviar a Nia</button>
       </form>
-      <div class="hint-card">Revisa o edita el texto antes de mandarlo a Nia. La respuesta se leerá automáticamente.</div>
+      <div class="hint-card">Modo seguro: el autoenvío está apagado por defecto. Puedes editar antes de enviar.</div>
       <button id="askNiaVoice" type="button">Enviar a Nia y escuchar</button>
+      <button id="replayNiaVoice" type="button" disabled>Repetir última respuesta</button>
       <p class="small">Límite: 800 caracteres. Los WAV quedan en <code>data/voice/outputs</code>.</p>
     </section>
     <section>
-      <h2>Resultado de voz</h2>
+      <h2>Conversación</h2>
       <audio id="voiceAudio" controls style="width:100%; display:none"></audio>
       <pre id="voiceResult">Listo.</pre>
+      <div id="voiceConversation" class="compact-scroll">Sin conversación todavía.</div>
     </section>
   </main>
 
@@ -510,7 +513,7 @@ async function startPushToTalk() {
   audioSource.connect(audioProcessor);
   audioProcessor.connect(audioContext.destination);
   recordingStartedAt = Date.now();
-  pttButton.textContent = '🔴 Grabando... pulsa para enviar';
+  pttButton.textContent = '🔴 Grabando... pulsa para transcribir';
   pttButton.classList.add('active');
   voiceTranscript.textContent = 'Grabando audio local...';
 }
@@ -529,7 +532,7 @@ async function stopPushToTalk() {
   audioStream = null;
   audioSource = null;
   audioProcessor = null;
-  pttButton.textContent = '🎙️ Hablar';
+  pttButton.textContent = '🎙️ Hablar con Nia';
   pttButton.classList.remove('active');
   if (elapsed < MIN_RECORDING_MS) {
     voiceTranscript.textContent = 'Mantén pulsado un poco más antes de soltar.';
@@ -551,11 +554,15 @@ async function stopPushToTalk() {
   if (data.ok) {
     voiceTranscript.textContent = data.text || '(sin texto detectado)';
     document.querySelector('#voiceText').value = data.text || '';
+    if (data.text) addVoiceTurn('Tú', data.text);
+    if (voiceAutoSend.checked && transcriptionLooksGood(data.text)) {
+      await askNiaAndSpeak();
+    }
   } else {
     voiceTranscript.textContent = JSON.stringify(data, null, 2);
   }
   pttButton.disabled = false;
-  pttButton.textContent = '🎙️ Hablar';
+  pttButton.textContent = '🎙️ Hablar con Nia';
 }
 pttButton.addEventListener('click', async (e) => {
   e.preventDefault();
@@ -565,7 +572,7 @@ pttButton.addEventListener('click', async (e) => {
   } else {
     await startPushToTalk().catch(err => {
       pttButton.disabled = false;
-      pttButton.textContent = '🎙️ Hablar';
+      pttButton.textContent = '🎙️ Hablar con Nia';
       voiceTranscript.textContent = `Error micrófono: ${err.message}`;
     });
   }
@@ -573,6 +580,27 @@ pttButton.addEventListener('click', async (e) => {
 const voiceResult = document.querySelector('#voiceResult');
 const voiceAudio = document.querySelector('#voiceAudio');
 const askNiaVoiceButton = document.querySelector('#askNiaVoice');
+const replayNiaVoiceButton = document.querySelector('#replayNiaVoice');
+const voiceConversation = document.querySelector('#voiceConversation');
+const voiceAutoSend = document.querySelector('#voiceAutoSend');
+let lastNiaAudioUrl = '';
+let lastNiaReply = '';
+function addVoiceTurn(who, text) {
+  const safeText = String(text || '').trim();
+  if (!safeText) return;
+  if (voiceConversation.textContent === 'Sin conversación todavía.') voiceConversation.textContent = '';
+  const item = document.createElement('div');
+  item.className = 'hint-card';
+  item.textContent = `${who}: ${safeText}`;
+  voiceConversation.prepend(item);
+}
+function transcriptionLooksGood(text) {
+  const value = String(text || '').trim();
+  if (value.length < 8) return false;
+  if (!/[a-záéíóúñü]/i.test(value)) return false;
+  if (/[{}<>]/.test(value)) return false;
+  return true;
+}
 document.querySelector('#voiceForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   voiceResult.textContent = 'Generando voz local...';
@@ -594,7 +622,7 @@ document.querySelector('#voiceForm').addEventListener('submit', async (e) => {
   }
 });
 
-askNiaVoiceButton.addEventListener('click', async () => {
+async function askNiaAndSpeak() {
   const text = document.querySelector('#voiceText').value.trim();
   if (!text) {
     voiceResult.textContent = 'Primero graba o escribe un mensaje para Nia.';
@@ -616,6 +644,10 @@ askNiaVoiceButton.addEventListener('click', async () => {
       voiceResult.textContent = data.reply;
       voiceAudio.src = data.audioUrl;
       voiceAudio.style.display = 'block';
+      lastNiaReply = data.reply || '';
+      lastNiaAudioUrl = data.audioUrl || '';
+      replayNiaVoiceButton.disabled = !lastNiaAudioUrl;
+      addVoiceTurn('Nia', data.reply);
       askNiaVoiceButton.textContent = '🔊 Reproduciendo respuesta';
       await voiceAudio.play().catch(() => {});
     } else {
@@ -627,6 +659,14 @@ askNiaVoiceButton.addEventListener('click', async () => {
     askNiaVoiceButton.disabled = false;
     askNiaVoiceButton.textContent = 'Enviar a Nia y escuchar';
   }
+}
+askNiaVoiceButton.addEventListener('click', askNiaAndSpeak);
+replayNiaVoiceButton.addEventListener('click', async () => {
+  if (!lastNiaAudioUrl) return;
+  voiceResult.textContent = lastNiaReply || 'Repitiendo última respuesta.';
+  voiceAudio.src = lastNiaAudioUrl;
+  voiceAudio.style.display = 'block';
+  await voiceAudio.play().catch(() => {});
 });
 
 loadReminders();
