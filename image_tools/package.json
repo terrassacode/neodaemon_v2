@@ -1,0 +1,15 @@
+{
+  "name": "openclaw-image-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check inspect_image.mjs && node --check ocr_image.mjs",
+    "inspect": "node inspect_image.mjs",
+    "ocr": "node ocr_image.mjs"
+  },
+  "dependencies": {
+    "sharp": "^0.33.5",
+    "tesseract.js": "^5.1.1"
+  }
+}
