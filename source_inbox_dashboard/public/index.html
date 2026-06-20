@@ -180,6 +180,13 @@
       <button id="pushToTalk" type="button">🎙️ Hablar con Nia</button>
       <div id="voiceStatus" class="next-action">Listo para hablar.</div>
       <pre id="voiceTranscript">Transcripción pendiente.</pre>
+      <label for="voiceSttModel">Modo STT</label>
+      <select id="voiceSttModel">
+        <option value="base">Rápido · base</option>
+        <option value="small" selected>Normal · small</option>
+        <option value="medium">Preciso · medium</option>
+      </select>
+      <p class="small">Rápido tarda menos. Normal es el equilibrio. Preciso entiende mejor “Nia”, pero puede tardar mucho.</p>
       <label class="small"><input id="voiceAutoSend" type="checkbox"> Autoenviar transcripciones buenas</label>
       <button id="pauseVoiceAuto" type="button" disabled>Pausar modo automático</button>
       <form id="voiceForm">
@@ -557,11 +564,12 @@ async function stopPushToTalk() {
   }
   const fd = new FormData();
   fd.append('file', wav, 'ptt.wav');
+  const sttModel = document.querySelector('#voiceSttModel').value;
   pttButton.textContent = '⏳ Transcribiendo...';
   pttButton.disabled = true;
-  setVoiceStatus('Transcribiendo...');
-  voiceTranscript.textContent = 'Transcribiendo localmente...';
-  const res = await fetch('/api/voice/listen', { method: 'POST', body: fd });
+  setVoiceStatus(`Transcribiendo (${sttModel})...`);
+  voiceTranscript.textContent = `Transcribiendo localmente con modelo ${sttModel}...`;
+  const res = await fetch(`/api/voice/listen?model=${encodeURIComponent(sttModel)}`, { method: 'POST', body: fd });
   const data = await res.json();
   if (data.ok) {
     voiceTranscript.textContent = data.text || '(sin texto detectado)';

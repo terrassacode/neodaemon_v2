@@ -176,3 +176,29 @@ data/voice/metrics.jsonl
 ```
 
 No guarda texto, audio ni secretos. Solo métricas técnicas: tipo, ok/error, tiempos, modelo, duración, tamaños y longitudes.
+
+## Selector de modo STT v1
+
+El dashboard permite elegir modelo STT por grabación:
+
+```text
+Rápido  → base
+Normal  → small  (por defecto)
+Preciso → medium
+```
+
+La selección se envía a:
+
+```text
+POST /api/voice/listen?model=base|small|medium
+```
+
+El backend valida la lista permitida. Si no se indica modelo, usa `small` para conservar el comportamiento anterior.
+
+Recomendación basada en benchmark real:
+
+```text
+base   = rápido
+small  = normal/equilibrado
+medium = preciso/manual, no default
+```
