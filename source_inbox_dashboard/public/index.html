@@ -176,8 +176,8 @@
           <p class="small">Genera audio local con Piper. No usa APIs externas en runtime.</p>
         </div>
       </div>
-      <div class="hint-card">Mantén pulsado para hablar. Al soltar, el audio se transcribe localmente.</div>
-      <button id="pushToTalk" type="button">Mantener pulsado para hablar</button>
+      <div class="hint-card">Pulsa una vez para empezar a grabar. Pulsa otra vez para parar y transcribir.</div>
+      <button id="pushToTalk" type="button">🎙️ Hablar</button>
       <pre id="voiceTranscript">Transcripción pendiente.</pre>
       <form id="voiceForm">
         <label for="voiceText">Texto a convertir en voz</label>
@@ -508,7 +508,7 @@ async function startPushToTalk() {
   audioSource.connect(audioProcessor);
   audioProcessor.connect(audioContext.destination);
   recordingStartedAt = Date.now();
-  pttButton.textContent = 'Grabando... suelta para transcribir';
+  pttButton.textContent = '🔴 Grabando... pulsa para enviar';
   pttButton.classList.add('active');
   voiceTranscript.textContent = 'Grabando audio local...';
 }
@@ -527,7 +527,7 @@ async function stopPushToTalk() {
   audioStream = null;
   audioSource = null;
   audioProcessor = null;
-  pttButton.textContent = 'Mantener pulsado para hablar';
+  pttButton.textContent = '🎙️ Hablar';
   pttButton.classList.remove('active');
   if (elapsed < MIN_RECORDING_MS) {
     voiceTranscript.textContent = 'Mantén pulsado un poco más antes de soltar.';
@@ -541,6 +541,8 @@ async function stopPushToTalk() {
   }
   const fd = new FormData();
   fd.append('file', wav, 'ptt.wav');
+  pttButton.textContent = '⏳ Transcribiendo...';
+  pttButton.disabled = true;
   voiceTranscript.textContent = 'Transcribiendo localmente...';
   const res = await fetch('/api/voice/listen', { method: 'POST', body: fd });
   const data = await res.json();
@@ -550,11 +552,22 @@ async function stopPushToTalk() {
   } else {
     voiceTranscript.textContent = JSON.stringify(data, null, 2);
   }
+  pttButton.disabled = false;
+  pttButton.textContent = '🎙️ Hablar';
 }
-pttButton.addEventListener('pointerdown', async (e) => { e.preventDefault(); await startPushToTalk().catch(err => { voiceTranscript.textContent = `Error micrófono: ${err.message}`; }); });
-pttButton.addEventListener('pointerup', (e) => { e.preventDefault(); stopPushToTalk(); });
-pttButton.addEventListener('pointercancel', stopPushToTalk);
-pttButton.addEventListener('mouseleave', () => { if (audioContext) stopPushToTalk(); });
+pttButton.addEventListener('click', async (e) => {
+  e.preventDefault();
+  if (pttButton.disabled) return;
+  if (audioContext) {
+    await stopPushToTalk();
+  } else {
+    await startPushToTalk().catch(err => {
+      pttButton.disabled = false;
+      pttButton.textContent = '🎙️ Hablar';
+      voiceTranscript.textContent = `Error micrófono: ${err.message}`;
+    });
+  }
+});
 const voiceResult = document.querySelector('#voiceResult');
 const voiceAudio = document.querySelector('#voiceAudio');
 document.querySelector('#voiceForm').addEventListener('submit', async (e) => {
