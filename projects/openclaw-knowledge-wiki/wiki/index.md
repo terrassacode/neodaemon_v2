@@ -13,6 +13,7 @@
 
 ## Conceptos
 
+- [GitHub CI/CD Dashboard Close Check v1](concepts/github-cicd-dashboard-close-check-v1.md)
 - [Repo Flow Dashboard Plan v1](concepts/repo-flow-dashboard-plan-v1.md)
 - [Working Flow Feature v1](concepts/working-flow-feature-v1.md)
 - [GitHub CI/CD Agent Flow](concepts/github-cicd-agent-flow.md)

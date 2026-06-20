@@ -101,6 +101,89 @@ La búsqueda web no encontró un repositorio oficial específico de OpenClaw que
 - Exec: `allowlist`, aprobación en comandos no permitidos
 - Filesystem: solo workspace
 
+
+## Cierre obligatorio con dashboard Repositorio
+
+Después de cada FEATURE que haya llegado a GitHub y haya sido mergeada, `github-cicd` debe hacer una comprobación final del estado del repositorio.
+
+Objetivo:
+
+- detectar ramas que no se hayan borrado;
+- confirmar que `main` quedó sincronizado;
+- confirmar que el PR está mergeado;
+- confirmar que no queda una FEATURE a medias;
+- avisar a Albert si algo se tuerce.
+
+### Fuente preferida
+
+Usar el dashboard Repositorio cuando esté disponible:
+
+```text
+GET http://127.0.0.1:8788/api/repo/status
+```
+
+Comprobaciones esperadas:
+
+- `main.local == main.remote`;
+- `main.synced == true`;
+- PR de la FEATURE en estado `MERGED`;
+- rama local de la FEATURE eliminada;
+- rama remota de la FEATURE eliminada;
+- `cleanupBranches` vacío o sin la rama de la FEATURE;
+- `nextAction` compatible con repo listo o siguiente FEATURE.
+
+### Fallback
+
+Si el dashboard no responde, usar comprobaciones directas:
+
+```bash
+gh pr view <PR>
+git status --short --branch
+git rev-parse --short main
+git rev-parse --short origin/main
+git branch --list <branch>
+git ls-remote --heads origin <branch>
+```
+
+El resultado debe marcarse como:
+
+```text
+dashboard repositorio: NO DISPONIBLE, fallback git/gh usado
+```
+
+### FEATURE_RESULT obligatorio
+
+El cierre debe incluir:
+
+```text
+FEATURE_RESULT
+
+PR: #X MERGED
+main: sincronizado / no sincronizado
+rama local: eliminada / pendiente
+rama remota: eliminada / pendiente
+dashboard repositorio: OK / NO DISPONIBLE / ALERTA
+ramas pendientes de limpieza: N
+siguiente acción: ...
+evidencia: ...
+```
+
+### Regla de alerta
+
+Si alguna comprobación falla, `github-cicd` debe avisar con:
+
+```text
+FEATURE_CLEANUP_ALERT
+```
+
+Debe explicar:
+
+- qué está mal;
+- qué riesgo tiene;
+- cuál es la acción mínima recomendada.
+
+No debe hacer merge adicional, borrar ramas no relacionadas ni modificar archivos fuera del flujo aprobado.
+
 ## Límites absolutos
 
 - No trabajar directamente en `main`.

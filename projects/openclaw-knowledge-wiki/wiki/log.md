@@ -187,3 +187,14 @@
   - Backend usa `git` + `gh`.
   - Frontend solo recibe estado saneado.
   - v1 solo lectura.
+
+## 2026-06-20 - GitHub CI/CD Dashboard Close Check v1
+
+- Norma añadida:
+  - `docs/GITHUB_CICD_AGENT_V1.md`
+  - `AGENTS.md`
+- Nota creada:
+  - `wiki/concepts/github-cicd-dashboard-close-check-v1.md`
+- Decisión:
+  - Tras merge/cleanup de cada FEATURE, `github-cicd` revisa dashboard Repositorio o fallback `git`/`gh`.
+  - Si algo falla, emite `FEATURE_CLEANUP_ALERT`.

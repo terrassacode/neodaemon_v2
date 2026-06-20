@@ -599,3 +599,9 @@ Reglas esenciales:
 - no usar `git add .` ni `git add -A`;
 - aplicar revisión crítica antes de `FEATURE_PROPOSAL`;
 - cerrar con evidencia real.
+
+Regla de cierre con dashboard:
+
+- tras merge y limpieza de una FEATURE, `github-cicd` debe comprobar el dashboard Repositorio (`/api/repo/status`) o usar fallback `git`/`gh`;
+- debe confirmar PR mergeado, `main` sincronizado, rama local/remota eliminadas y cero ramas pendientes de limpieza para esa FEATURE;
+- si algo falla, responder `FEATURE_CLEANUP_ALERT` con acción mínima recomendada.
