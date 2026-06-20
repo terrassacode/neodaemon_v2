@@ -398,9 +398,10 @@ async function handleVoiceListen(req, res) {
   const body = await readBody(req, 12 * 1024 * 1024);
   const part = filePart(parseMultipart(body, req.headers['content-type']));
   if (!part) return sendJson(res, 400, { ok: false, error: 'missing_audio' });
-  const mime = String(part.mime || '').toLowerCase();
+  const rawMime = String(part.mime || '').toLowerCase();
+  const mime = rawMime.split(';')[0].trim();
   if (!['audio/webm', 'audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp4', 'audio/ogg'].includes(mime)) {
-    return sendJson(res, 400, { ok: false, error: 'unsupported_audio_type', mime });
+    return sendJson(res, 400, { ok: false, error: 'unsupported_audio_type', mime: rawMime });
   }
   const ext = mime.includes('wav') ? '.wav' : mime.includes('mpeg') ? '.mp3' : mime.includes('mp4') ? '.m4a' : mime.includes('ogg') ? '.ogg' : '.webm';
   const id = `${nowStamp()}_${crypto.randomUUID().slice(0, 8)}`;
