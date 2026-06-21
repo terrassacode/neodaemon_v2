@@ -19,3 +19,13 @@ SYSTEM_HEALTH_PASS
 ```
 
 Si falla, corrige el primer `FAIL` relevante antes de seguir.
+
+## Dashboard
+
+El panel Repositorio incluye un botón `Healthcheck` que ejecuta:
+
+```bash
+python3 tools/healthcheck.py --quick
+```
+
+Sirve para comprobar el sistema desde la web sin entrar por SSH.
