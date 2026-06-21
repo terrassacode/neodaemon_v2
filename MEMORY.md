@@ -8,6 +8,7 @@
 - Valora pensamiento crítico, rigor, seguridad y minimalismo.
 - No quiere que se le dé la razón por defecto.
 - Quiere evidencia real antes de dar algo por cerrado.
+- Prefiere minimalismo y eficacia: evitar sobredocumentar procesos, no entrar en bucles para avanzar y no crear documentación si no desbloquea acción real.
 
 ## OpenClaw / NeoDaemon
 
