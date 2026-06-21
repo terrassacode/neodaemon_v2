@@ -215,13 +215,17 @@
           <h2>Repositorio</h2>
           <p class="small">Vista solo lectura del flujo Git/GitHub. No hace push, merge ni borra ramas.</p>
         </div>
-        <button id="repoRefresh" type="button">Refrescar</button>
+        <div class="toolbar">
+          <button id="repoRefresh" type="button">Refrescar</button>
+          <button id="healthcheckQuick" type="button">Healthcheck</button>
+        </div>
       </div>
     </section>
 
     <section>
       <h2>Siguiente acción</h2>
       <div id="repoNextAction" class="next-action">Cargando estado...</div>
+      <pre id="healthcheckResult">Healthcheck pendiente.</pre>
     </section>
 
     <section>
@@ -431,7 +435,27 @@ document.querySelectorAll('nav button').forEach(btn => {
   });
 });
 
+
 document.querySelector('#repoRefresh').addEventListener('click', loadRepoStatus);
+document.querySelector('#healthcheckQuick').addEventListener('click', async () => {
+  const box = document.querySelector('#healthcheckResult');
+  const btn = document.querySelector('#healthcheckQuick');
+  btn.disabled = true;
+  box.textContent = 'Ejecutando healthcheck rápido...';
+  try {
+    const res = await fetch('/api/healthcheck/quick', { method: 'POST' });
+    const data = await res.json();
+    box.textContent = `${data.status || 'SYSTEM_HEALTH_UNKNOWN'}
+
+${data.output || ''}`;
+  } catch (err) {
+    box.textContent = `SYSTEM_HEALTH_FAIL
+
+${err.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 document.querySelector('#reminderForm').addEventListener('submit', async (e) => {
   e.preventDefault();

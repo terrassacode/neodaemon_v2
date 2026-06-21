@@ -625,6 +625,20 @@ async function handleUrl(req, res) {
   sendJson(res, 201, { ok: true, item: meta, metaPath });
 }
 
+
+async function handleHealthcheckQuick(req, res) {
+  const result = await runCommand('python3', ['tools/healthcheck.py', '--quick'], { cwd: REPO_ROOT, timeout: 120000 });
+  const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+  const lines = output.split('\n').filter(Boolean).slice(-40);
+  return sendJson(res, result.ok ? 200 : 503, {
+    ok: result.ok,
+    status: result.ok ? 'SYSTEM_HEALTH_PASS' : 'SYSTEM_HEALTH_FAIL',
+    output: lines.join('\n'),
+    code: result.code,
+    createdAt: new Date().toISOString()
+  });
+}
+
 async function serveStatic(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const rel = url.pathname === '/' ? '/index.html' : url.pathname;
@@ -646,6 +660,7 @@ const server = http.createServer(async (req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
     if (req.method === 'GET' && pathname === '/api/reminders') return await handleListReminders(req, res);
     if (req.method === 'GET' && pathname === '/api/repo/status') return await handleRepoStatus(req, res);
+    if (req.method === 'POST' && pathname === '/api/healthcheck/quick') return await handleHealthcheckQuick(req, res);
     if (req.method === 'POST' && pathname === '/api/reminders') return await handleAddReminder(req, res);
     if (req.method === 'POST' && pathname === '/api/reminders/complete') return await handleCompleteReminder(req, res);
     if (req.method === 'POST' && pathname === '/api/upload') return await handleUpload(req, res);
