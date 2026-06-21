@@ -108,6 +108,7 @@ function runImageTools(filePath, id) {
   (async () => {
     await run('inspect_image.mjs');
     await run('ocr_image.mjs', ['spa+eng']);
+    await run('vision_image.mjs', ['moondream']);
   })();
 }
 
