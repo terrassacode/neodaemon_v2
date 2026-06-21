@@ -68,3 +68,4 @@ data/
 /data/
 source_inbox_dashboard/node_modules/
 image_tools/node_modules/
+*.traineddata
