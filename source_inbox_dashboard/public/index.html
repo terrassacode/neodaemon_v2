@@ -229,6 +229,11 @@
     </section>
 
     <section>
+      <h2>GitHub workflow helper</h2>
+      <div id="githubWorkflowHelper" class="list">Cargando guía...</div>
+    </section>
+
+    <section>
       <h2>Estado general</h2>
       <div class="repo-grid">
         <div class="repo-card"><h3>Repo</h3><div id="repoName" class="value">—</div><p id="repoUrl" class="small">—</p></div>
@@ -375,6 +380,52 @@ function renderTimeline(data) {
   }).join('');
 }
 
+
+function renderGithubWorkflowHelper(data) {
+  const box = document.querySelector('#githubWorkflowHelper');
+  const openPr = (data.pullRequests || []).find(pr => pr.state === 'OPEN');
+  const cleanup = data.cleanupBranches || [];
+  const branch = data.local?.branch || 'unknown';
+  const dirty = Boolean(data.local?.dirty);
+  const pending = data.local?.pending || [];
+  let phase = 'LISTO';
+  let action = 'Pide OK FEATURE para empezar una nueva tarea con rama.';
+  let detail = data.nextAction || 'Repo listo.';
+  let phrase = 'OK FEATURE';
+  if (!data.github?.ok) {
+    phase = 'BLOQUEO';
+    action = 'Revisar login/permisos de GitHub CLI antes de seguir.';
+    phrase = 'Resolver GitHub';
+  } else if (cleanup.length) {
+    phase = 'CLEANUP';
+    action = 'Limpiar ramas de PRs ya mergeadas antes de abrir más trabajo.';
+    phrase = 'Merged / cleanup';
+  } else if (openPr) {
+    phase = 'PR ABIERTA';
+    action = `Revisar PR #${openPr.number}. Si Albert la mergea, decir “Merged”.`;
+    phrase = 'Merged';
+    detail = `${openPr.title} · checks: ${openPr.checks?.label || '—'} · mergeable: ${openPr.mergeable || 'UNKNOWN'}`;
+  } else if (branch !== 'main') {
+    phase = dirty ? 'FEATURE LOCAL' : 'FEATURE LISTA';
+    action = dirty ? 'Validar y commitear cambios mínimos.' : 'Si la feature está validada, pedir OK GITHUB para abrir PR.';
+    phrase = dirty ? 'commit local' : 'OK GITHUB';
+  } else if (dirty) {
+    phase = 'CAMBIOS EN MAIN';
+    action = 'Mover cambios reales a una FEATURE o dejar memoria local fuera de PR.';
+    phrase = 'ordenar cambios';
+    detail = pending.join('\n') || detail;
+  } else if (!data.main?.synced) {
+    phase = 'MAIN DESFASADO';
+    action = 'Sincronizar main antes de nueva FEATURE.';
+    phrase = 'sync main';
+  }
+  box.innerHTML = [
+    `<div class="repo-card"><h3>Fase</h3><div class="value">${escapeHtml(phase)}</div><p class="small">${escapeHtml(detail)}</p></div>`,
+    `<div class="repo-card"><h3>Siguiente paso</h3><div class="value">${escapeHtml(phrase)}</div><p class="small">${escapeHtml(action)}</p></div>`,
+    `<div class="repo-card"><h3>Regla</h3><p class="small">No push sin OK GITHUB. No merge automático. Tras merge: decir “Merged” para sync + cleanup.</p></div>`
+  ].join('');
+}
+
 function renderRepoStatus(data) {
   document.querySelector('#repoNextAction').textContent = data.nextAction || 'Sin recomendación';
   document.querySelector('#repoName').textContent = data.repo?.name || '—';
@@ -385,6 +436,7 @@ function renderRepoStatus(data) {
   document.querySelector('#repoMainSha').textContent = `local ${data.main?.local || '—'} · origin ${data.main?.remote || '—'}`;
 
   renderTimeline(data);
+  renderGithubWorkflowHelper(data);
 
   const prs = data.pullRequests || [];
   document.querySelector('#repoPrs').innerHTML = prs.length ? prs.map(pr => {
