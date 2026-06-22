@@ -187,6 +187,12 @@
         <option value="medium">Preciso · medium</option>
       </select>
       <p class="small">Rápido tarda menos. Normal es el equilibrio. Preciso entiende mejor “Nia”, pero puede tardar mucho.</p>
+      <label for="voiceResponseMode">Modo respuesta</label>
+      <select id="voiceResponseMode">
+        <option value="fast" selected>Rápido · conversación corta</option>
+        <option value="full">Completo · tareas serias</option>
+      </select>
+      <p class="small">Rápido evita herramientas y contexto pesado. Completo mantiene el comportamiento anterior.</p>
       <label class="small"><input id="voiceAutoSend" type="checkbox"> Autoenviar transcripciones buenas</label>
       <button id="pauseVoiceAuto" type="button" disabled>Pausar modo automático</button>
       <form id="voiceForm">
@@ -718,6 +724,7 @@ function showVoiceMetrics(label, metrics = {}, extra = {}) {
   if (metrics.agentMs != null) parts.push(`Nia ${formatMs(metrics.agentMs)}`);
   if (metrics.ttsMs != null) parts.push(`Piper ${formatMs(metrics.ttsMs)}`);
   if (metrics.totalMs != null) parts.push(`total ${formatMs(metrics.totalMs)}`);
+  if (extra.mode) parts.push(`modo ${extra.mode}`);
   if (extra.model) parts.push(`modelo ${extra.model}`);
   if (extra.duration != null) parts.push(`audio ${Number(extra.duration).toFixed(1)}s`);
   voiceMetrics.textContent = `Métricas ${label}: ${parts.length ? parts.join(' · ') : 'sin datos'}`;
@@ -768,12 +775,12 @@ async function askNiaAndSpeak() {
     const res = await fetch('/api/voice/ask-nia', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ text, mode: document.querySelector('#voiceResponseMode').value })
     });
     const data = await res.json();
     if (data.ok) {
       voiceResult.textContent = data.reply;
-      showVoiceMetrics('respuesta', data.metrics);
+      showVoiceMetrics('respuesta', data.metrics, { mode: data.mode });
       voiceAudio.src = data.audioUrl;
       voiceAudio.style.display = 'block';
       lastNiaReply = data.reply || '';
