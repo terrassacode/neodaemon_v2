@@ -22,6 +22,10 @@ const STT_SCRIPT = path.resolve('/openclaw/openclaw_v2/voice_tools/transcribe_au
 const VOICE_PYTHON = path.resolve('/openclaw/openclaw_v2/voice_tools/.venv/bin/python');
 const VOICE_AGENT_ID = process.env.VOICE_AGENT_ID || 'neodaemon-v2';
 const VOICE_AGENT_SESSION = process.env.VOICE_AGENT_SESSION || 'voice-dashboard';
+const VOICE_FAST_AGENT_ID = process.env.VOICE_FAST_AGENT_ID || VOICE_AGENT_ID;
+const VOICE_FAST_AGENT_SESSION = process.env.VOICE_FAST_AGENT_SESSION || 'voice-dashboard-fast';
+const VOICE_FAST_MODEL = process.env.VOICE_FAST_MODEL || '';
+const VOICE_FAST_TIMEOUT_SECONDS = Number(process.env.VOICE_FAST_TIMEOUT_SECONDS || '60');
 const ALLOWED_STT_MODELS = new Set(['base', 'small', 'medium']);
 
 const allowedMime = new Map([
@@ -512,13 +516,24 @@ function extractAgentText(payload) {
   return String(direct || metaVisible || metaRaw || '').trim();
 }
 
-function voiceAgentPrompt(text) {
+function voiceAgentPrompt(text, mode = 'fast') {
+  if (mode === 'full') {
+    return [
+      'Mensaje recibido desde el panel de voz de Albert.',
+      'Responde en español, en primera persona como Nia, de forma natural y breve.',
+      'La respuesta se leerá en voz alta con Piper: máximo 700 caracteres, sin tablas y sin markdown pesado.',
+      '',
+      `Mensaje de Albert: ${text}`
+    ].join('\n');
+  }
   return [
-    'Mensaje recibido desde el panel de voz de Albert.',
-    'Responde en español, en primera persona como Nia, de forma natural y breve.',
-    'La respuesta se leerá en voz alta con Piper: máximo 700 caracteres, sin tablas y sin markdown pesado.',
+    'Modo voz rápido de Nia.',
+    'Responde como una conversación oral: directo, natural y corto.',
+    'No uses herramientas, no revises archivos, no hagas Git, no abras planes largos.',
+    'Si la petición requiere ejecutar acciones reales, responde brevemente que necesita modo completo.',
+    'Máximo 350 caracteres. Sin listas largas, sin markdown pesado.',
     '',
-    `Mensaje de Albert: ${text}`
+    `Albert dice: ${text}`
   ].join('\n');
 }
 
@@ -540,19 +555,26 @@ async function handleVoiceAskNia(req, res) {
   const totalStart = process.hrtime.bigint();
   const data = JSON.parse((await readBody(req, 64 * 1024)).toString('utf8'));
   const text = String(data.text || '').trim();
+  const requestedMode = String(data.mode || 'fast').trim().toLowerCase();
+  const mode = requestedMode === 'full' ? 'full' : 'fast';
   if (!text) return sendJson(res, 400, { ok: false, error: 'missing_text' });
   if (text.length > 1200) return sendJson(res, 400, { ok: false, error: 'text_too_long', max: 1200 });
-  const prompt = voiceAgentPrompt(text);
+  const prompt = voiceAgentPrompt(text, mode);
   const agentStart = process.hrtime.bigint();
-  const agent = await runCommand('openclaw', [
+  const agentId = mode === 'fast' ? VOICE_FAST_AGENT_ID : VOICE_AGENT_ID;
+  const sessionId = mode === 'fast' ? VOICE_FAST_AGENT_SESSION : VOICE_AGENT_SESSION;
+  const timeoutSeconds = mode === 'fast' ? VOICE_FAST_TIMEOUT_SECONDS : 180;
+  const args = [
     'agent',
-    '--agent', VOICE_AGENT_ID,
-    '--session-id', VOICE_AGENT_SESSION,
+    '--agent', agentId,
+    '--session-id', sessionId,
     '--message', prompt,
     '--thinking', 'off',
-    '--timeout', '180',
+    '--timeout', String(timeoutSeconds),
     '--json'
-  ], { cwd: REPO_ROOT, timeout: 210000 });
+  ];
+  if (mode === 'fast' && VOICE_FAST_MODEL) args.splice(5, 0, '--model', VOICE_FAST_MODEL);
+  const agent = await runCommand('openclaw', args, { cwd: REPO_ROOT, timeout: (timeoutSeconds + 30) * 1000 });
   const agentMs = elapsedMs(agentStart);
   let payload = null;
   try { payload = JSON.parse(agent.stdout || '{}'); } catch { payload = null; }
@@ -568,7 +590,8 @@ async function handleVoiceAskNia(req, res) {
       metrics
     });
   }
-  const spokenText = reply.length > 800 ? `${reply.slice(0, 797)}...` : reply;
+  const maxReplyLength = mode === 'fast' ? 500 : 800;
+  const spokenText = reply.length > maxReplyLength ? `${reply.slice(0, maxReplyLength - 3)}...` : reply;
   const audio = await createVoiceAudio(spokenText);
   const metrics = { agentMs, ttsMs: audio.metrics?.ttsMs || null, totalMs: elapsedMs(totalStart) };
   if (!audio.ok) {
@@ -582,7 +605,7 @@ async function handleVoiceAskNia(req, res) {
       metrics
     });
   }
-  await appendVoiceMetric({ kind: 'ask-nia', ok: true, metrics, textLength: text.length, replyLength: reply.length });
+  await appendVoiceMetric({ kind: 'ask-nia', mode, ok: true, metrics, textLength: text.length, replyLength: reply.length });
   return sendJson(res, 201, {
     ok: true,
     reply,
@@ -590,7 +613,8 @@ async function handleVoiceAskNia(req, res) {
     audioUrl: audio.audioUrl,
     bytes: audio.bytes,
     metrics,
-    agent: { id: VOICE_AGENT_ID, session: VOICE_AGENT_SESSION },
+    mode,
+    agent: { id: agentId, session: sessionId },
     createdAt: new Date().toISOString()
   });
 }
