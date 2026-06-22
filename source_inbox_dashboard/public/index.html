@@ -110,6 +110,8 @@
       <button type="submit">Subir archivo</button>
     </form>
     <p class="small">Máximo 25 MB. No sobrescribe.</p>
+    <div class="hint-card">Visión precisa usa Codex/OpenAI externo solo cuando pulsas el botón.</div>
+    <button id="preciseVisionLatest" type="button">Analizar última imagen con visión precisa</button>
   </section>
 
   <section>
@@ -277,11 +279,34 @@
 
 <script>
 const result = document.querySelector('#result');
+const preciseVisionLatestButton = document.querySelector('#preciseVisionLatest');
 async function postJson(path, body) {
   const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json();
   result.textContent = JSON.stringify(data, null, 2);
 }
+
+preciseVisionLatestButton.addEventListener('click', async () => {
+  if (!confirm('Esto enviará la última imagen subida a un proveedor externo para análisis preciso. ¿Continuar?')) return;
+  preciseVisionLatestButton.disabled = true;
+  preciseVisionLatestButton.textContent = 'Analizando imagen...';
+  result.textContent = 'Enviando última imagen a visión precisa...';
+  try {
+    const res = await fetch('/api/image/precise-vision', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    result.textContent = data.ok ? `Visión precisa OK (${Math.round((data.durationMs || 0) / 1000)}s · ${data.model || 'modelo externo'})\n\n${data.text}` : JSON.stringify(data, null, 2);
+  } catch (err) {
+    result.textContent = `Error en visión precisa: ${err.message}`;
+  } finally {
+    preciseVisionLatestButton.disabled = false;
+    preciseVisionLatestButton.textContent = 'Analizar última imagen con visión precisa';
+  }
+});
+
 document.querySelector('#fileForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);

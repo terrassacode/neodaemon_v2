@@ -27,6 +27,7 @@ const VOICE_FAST_AGENT_SESSION = process.env.VOICE_FAST_AGENT_SESSION || 'voice-
 const VOICE_FAST_MODEL = process.env.VOICE_FAST_MODEL || '';
 const VOICE_FAST_TIMEOUT_SECONDS = Number(process.env.VOICE_FAST_TIMEOUT_SECONDS || '60');
 const ALLOWED_STT_MODELS = new Set(['base', 'small', 'medium']);
+const PRECISE_VISION_MODEL = process.env.PRECISE_VISION_MODEL || 'openai-codex/gpt-5.5';
 
 const allowedMime = new Map([
   ['application/pdf', '.pdf'],
@@ -70,6 +71,7 @@ async function ensureDirs() {
   await fs.mkdir(path.join(DATA, 'texts'), { recursive: true });
   await fs.mkdir(path.join(DATA, 'urls'), { recursive: true });
   await fs.mkdir(path.join(DATA, 'meta'), { recursive: true });
+  await fs.mkdir(path.join(DATA, 'derived', 'images'), { recursive: true });
   await fs.mkdir(VOICE_OUT_DIR, { recursive: true });
   await fs.mkdir(VOICE_IN_DIR, { recursive: true });
   await fs.mkdir(path.dirname(VOICE_METRICS_FILE), { recursive: true });
@@ -114,6 +116,80 @@ function runImageTools(filePath, id) {
     await run('ocr_image.mjs', ['spa+eng']);
     await run('vision_image.mjs', ['moondream']);
   })();
+}
+
+
+async function readMeta(id) {
+  if (!/^[A-Za-z0-9T_.-]+$/.test(String(id || ''))) return null;
+  const metaPath = path.join(DATA, 'meta', `${id}.json`);
+  try { return JSON.parse(await fs.readFile(metaPath, 'utf8')); } catch { return null; }
+}
+
+async function latestImageMeta() {
+  const names = await fs.readdir(path.join(DATA, 'meta')).catch(() => []);
+  const items = [];
+  for (const name of names.filter(name => name.endsWith('.json'))) {
+    const id = name.replace(/\.json$/, '');
+    const meta = await readMeta(id);
+    if (meta?.kind === 'file' && String(meta.mime || '').startsWith('image/') && meta.path) items.push(meta);
+  }
+  items.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  return items[0] || null;
+}
+
+function derivedStemForImage(filePath) {
+  const safeBase = path.basename(filePath).replace(/[^a-zA-Z0-9._-]+/g, '_');
+  return safeBase.replace(/\.[^.]+$/, '');
+}
+
+async function handleImagePreciseVision(req, res) {
+  const data = JSON.parse((await readBody(req, 64 * 1024)).toString('utf8') || '{}');
+  const meta = data.id ? await readMeta(String(data.id)) : await latestImageMeta();
+  if (!meta) return sendJson(res, 404, { ok: false, error: 'image_not_found' });
+  if (meta.kind !== 'file' || !String(meta.mime || '').startsWith('image/')) return sendJson(res, 400, { ok: false, error: 'not_an_image' });
+  const filePath = path.resolve(String(meta.path || ''));
+  const filesRoot = path.resolve(DATA, 'files');
+  if (!filePath.startsWith(filesRoot + path.sep)) return sendJson(res, 403, { ok: false, error: 'forbidden_path' });
+  try { await fs.access(filePath); } catch { return sendJson(res, 404, { ok: false, error: 'image_file_missing' }); }
+
+  const prompt = String(data.prompt || '').trim() || 'Analiza esta imagen con precisión. Si contiene texto, extrae lo importante. Si es una tabla o documento, resume su estructura. No inventes: marca dudas o partes ilegibles.';
+  if (prompt.length > 1000) return sendJson(res, 400, { ok: false, error: 'prompt_too_long', max: 1000 });
+  const stem = derivedStemForImage(filePath);
+  const outDir = path.join(DATA, 'derived', 'images');
+  const textPath = path.join(outDir, `${stem}.precise-vision.txt`);
+  const jsonPath = path.join(outDir, `${stem}.precise-vision.json`);
+  const logPath = path.join(DATA, 'meta', `${meta.id}.precise-vision.log`);
+  const started = process.hrtime.bigint();
+  const result = await runCommand('openclaw', [
+    'infer', 'image', 'describe',
+    '--file', filePath,
+    '--prompt', prompt,
+    '--model', PRECISE_VISION_MODEL,
+    '--timeout-ms', '120000',
+    '--json'
+  ], { cwd: REPO_ROOT, timeout: 150000 });
+  const durationMs = elapsedMs(started);
+  let payload = null;
+  try { payload = JSON.parse(result.stdout || '{}'); } catch { payload = null; }
+  const text = String(payload?.outputs?.[0]?.text || payload?.text || payload?.description || payload?.output || payload?.result?.text || '').trim();
+  const ok = Boolean(result.ok && text);
+  const record = {
+    ok,
+    id: meta.id,
+    input: filePath,
+    prompt,
+    textPath,
+    jsonPath,
+    durationMs,
+    model: PRECISE_VISION_MODEL,
+    createdAt: new Date().toISOString(),
+    error: ok ? null : (payload?.error || result.error || result.stderr || 'precise_vision_failed')
+  };
+  await fs.writeFile(jsonPath, JSON.stringify(record, null, 2));
+  if (ok) await fs.writeFile(textPath, text);
+  await fs.appendFile(logPath, [`ok=${ok}`, `durationMs=${durationMs}`, ok ? `textLength=${text.length}` : `error=${record.error}`].join('\n') + '\n---\n').catch(() => {});
+  if (!ok) return sendJson(res, 503, { ok: false, error: record.error, detail: payload || { stderr: result.stderr }, durationMs });
+  return sendJson(res, 201, { ok: true, id: meta.id, originalName: meta.originalName, text, textPath, jsonPath, durationMs, model: PRECISE_VISION_MODEL, createdAt: record.createdAt });
 }
 
 function sendJson(res, status, data, req = null) {
@@ -694,6 +770,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && pathname === '/api/voice/tts') return await handleVoiceTts(req, res);
     if (req.method === 'POST' && pathname === '/api/voice/listen') return await handleVoiceListen(req, res);
     if (req.method === 'POST' && pathname === '/api/voice/ask-nia') return await handleVoiceAskNia(req, res);
+    if (req.method === 'POST' && pathname === '/api/image/precise-vision') return await handleImagePreciseVision(req, res);
     if (req.method === 'GET' && pathname.startsWith('/voice/outputs/')) return await serveVoiceOutput(req, res);
     if (req.method === 'GET' || req.method === 'HEAD') return await serveStatic(req, res);
     sendJson(res, 405, { ok: false, error: 'method_not_allowed' }, req);
