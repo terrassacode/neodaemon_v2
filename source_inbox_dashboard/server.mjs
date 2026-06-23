@@ -451,6 +451,27 @@ async function handleCompleteReminder(req, res) {
   sendJson(res, 200, { ok: true, item });
 }
 
+
+async function findExistingFileByHash(hash) {
+  const filesDir = path.join(DATA, 'files');
+  const names = await fs.readdir(filesDir).catch(() => []);
+  for (const name of names) {
+    const filePath = path.join(filesDir, name);
+    let stat;
+    try { stat = await fs.stat(filePath); } catch { continue; }
+    if (!stat.isFile()) continue;
+    const body = await fs.readFile(filePath);
+    const existingHash = crypto.createHash('sha256').update(body).digest('hex');
+    if (existingHash !== hash) continue;
+    const id = name.split('_').slice(0, 2).join('_');
+    const metaPath = path.join(DATA, 'meta', `${id}.json`);
+    let meta = null;
+    try { meta = JSON.parse(await fs.readFile(metaPath, 'utf8')); } catch { meta = null; }
+    return { id, name, path: filePath, bytes: stat.size, meta };
+  }
+  return null;
+}
+
 async function handleUpload(req, res) {
   const body = await readBody(req);
   const part = filePart(parseMultipart(body, req.headers['content-type']));
@@ -458,6 +479,17 @@ async function handleUpload(req, res) {
   const ext = allowedMime.get(part.mime);
   if (!ext) return sendJson(res, 415, { ok: false, error: 'unsupported_type', mime: part.mime });
   const original = safeName(part.filename);
+  const sha256 = crypto.createHash('sha256').update(part.content).digest('hex');
+  const duplicateOf = await findExistingFileByHash(sha256);
+  if (duplicateOf) {
+    return sendJson(res, 200, {
+      ok: true,
+      duplicate: true,
+      message: 'Archivo duplicado detectado. No se guardó ni se reprocesó.',
+      original: duplicateOf.meta || { id: duplicateOf.id, storedName: duplicateOf.name, path: duplicateOf.path, bytes: duplicateOf.bytes },
+      upload: { originalName: original, mime: part.mime, bytes: part.content.length, sha256 }
+    });
+  }
   const id = `${nowStamp()}_${crypto.randomUUID().slice(0, 8)}`;
   const storedName = `${id}_${original.endsWith(ext) ? original : original + ext}`;
   const filePath = path.join(DATA, 'files', storedName);
@@ -471,6 +503,7 @@ async function handleUpload(req, res) {
     storedName,
     mime: part.mime,
     bytes: part.content.length,
+    sha256,
     path: filePath,
     imageProcessing: isImage ? 'queued' : 'not_applicable',
     pdfProcessing: isPdf ? 'queued' : 'not_applicable',
