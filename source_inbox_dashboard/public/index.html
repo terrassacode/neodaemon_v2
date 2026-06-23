@@ -312,7 +312,9 @@ document.querySelector('#fileForm').addEventListener('submit', async (e) => {
   const fd = new FormData(e.target);
   const res = await fetch('/api/upload', { method: 'POST', body: fd });
   const data = await res.json();
-  if (data.ok) {
+  if (data.ok && data.duplicate) {
+    result.textContent = `Duplicado detectado. Ya existía: ${data.original?.originalName || data.original?.storedName || data.original?.id || 'archivo previo'}`;
+  } else if (data.ok) {
     result.textContent = 'Archivo subido';
     e.target.reset();
   } else {
