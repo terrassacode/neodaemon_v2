@@ -95,6 +95,7 @@
 
   <nav>
     <button class="active" data-screen="sources">Fuentes</button>
+    <button data-screen="activity">Actividad</button>
     <button data-screen="reminders">Recordatorios</button>
     <button data-screen="repo">Repositorio</button>
     <button data-screen="voice">Voz</button>
@@ -213,6 +214,32 @@
       <pre id="voiceResult">Listo.</pre>
       <div id="voiceMetrics" class="hint-card">Métricas: esperando prueba de voz.</div>
       <div id="voiceConversation" class="compact-scroll">Sin conversación todavía.</div>
+    </section>
+  </main>
+
+
+  <main id="activity" class="screen">
+    <section>
+      <div class="toolbar">
+        <div>
+          <h2>Actividad reciente</h2>
+          <p class="small">Lo último que ha pasado en el dashboard: archivos, análisis, voz y estado básico.</p>
+        </div>
+        <button id="activityRefresh" type="button">Refrescar</button>
+      </div>
+      <div id="activitySummary" class="next-action">Cargando actividad...</div>
+    </section>
+    <section>
+      <h2>Últimos archivos</h2>
+      <div id="activityFiles" class="list compact-scroll">Cargando...</div>
+    </section>
+    <section>
+      <h2>Imágenes y análisis</h2>
+      <div id="activityImages" class="list compact-scroll">Cargando...</div>
+    </section>
+    <section>
+      <h2>Voz</h2>
+      <div id="activityVoice" class="list compact-scroll">Cargando...</div>
     </section>
   </main>
 
@@ -414,6 +441,40 @@ function renderTimeline(data) {
 }
 
 
+
+function yesNo(value) { return value ? 'sí' : 'no'; }
+function renderActivity(data) {
+  const summary = document.querySelector('#activitySummary');
+  const files = data.latest?.files || [];
+  const images = data.latest?.images || [];
+  const metrics = data.voice?.metrics || [];
+  summary.textContent = `Últimos: ${files.length} archivos · ${images.length} imágenes · ${metrics.length} métricas de voz · repo ${data.repo?.dirty ? 'con cambios' : 'limpio'}`;
+  document.querySelector('#activityFiles').innerHTML = files.length ? files.map(item => `
+    <div class="row"><div><strong>${escapeHtml(item.originalName || item.title || item.id)}</strong><div class="small">${escapeHtml(item.kind)} · ${escapeHtml(item.mime || '—')} · ${escapeHtml(item.createdAt || '')}</div></div><span class="badge info">${Math.round((item.bytes || 0) / 1024)} KB</span></div>
+  `).join('') : 'Sin archivos.';
+  document.querySelector('#activityImages').innerHTML = images.length ? images.map(item => {
+    const scripts = (item.scripts || []).map(s => `${s.script}:${s.ok ? 'OK' : 'FAIL'}`).join(' · ') || 'sin log';
+    return `<div class="row"><div><strong>${escapeHtml(item.originalName || item.id)}</strong><div class="small">OCR ${yesNo(item.hasOcr)} · Vision ${yesNo(item.hasVision)} · Codex ${yesNo(item.hasPreciseVision)}</div><div class="small">${escapeHtml(scripts)}</div></div><span class="badge ${item.hasPreciseVision ? 'ok' : 'info'}">imagen</span></div>`;
+  }).join('') : 'Sin imágenes recientes.';
+  document.querySelector('#activityVoice').innerHTML = metrics.length ? metrics.map(item => {
+    const m = item.metrics || {};
+    const total = m.totalMs != null ? formatMs(m.totalMs) : '—';
+    const detail = item.kind === 'ask-nia' ? `Nia ${m.agentMs != null ? formatMs(m.agentMs) : '—'} · Piper ${m.ttsMs != null ? formatMs(m.ttsMs) : '—'}` : `STT ${m.sttMs != null ? formatMs(m.sttMs) : '—'}`;
+    return `<div class="row"><div><strong>${escapeHtml(item.kind || 'voz')}</strong><div class="small">${escapeHtml(item.createdAt || '')}</div><div class="small">${escapeHtml(detail)} · total ${escapeHtml(total)}</div></div><span class="badge ${item.ok ? 'ok' : 'fail'}">${item.ok ? 'OK' : 'FAIL'}</span></div>`;
+  }).join('') : 'Sin métricas de voz.';
+}
+async function loadActivity() {
+  document.querySelector('#activitySummary').textContent = 'Cargando actividad...';
+  try {
+    const res = await fetch('/api/activity');
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'activity_failed');
+    renderActivity(data);
+  } catch (err) {
+    document.querySelector('#activitySummary').textContent = `No se pudo cargar actividad: ${err.message}`;
+  }
+}
+
 function renderGithubWorkflowHelper(data) {
   const box = document.querySelector('#githubWorkflowHelper');
   const openPr = (data.pullRequests || []).find(pr => pr.state === 'OPEN');
@@ -516,12 +577,14 @@ document.querySelectorAll('nav button').forEach(btn => {
     btn.classList.add('active');
     document.getElementById(btn.dataset.screen).classList.add('active');
     if (btn.dataset.screen === 'reminders') await loadReminders();
+    if (btn.dataset.screen === 'activity') await loadActivity();
     if (btn.dataset.screen === 'repo') await loadRepoStatus();
   });
 });
 
 
 document.querySelector('#repoRefresh').addEventListener('click', loadRepoStatus);
+document.querySelector('#activityRefresh').addEventListener('click', loadActivity);
 document.querySelector('#healthcheckQuick').addEventListener('click', async () => {
   const box = document.querySelector('#healthcheckResult');
   const btn = document.querySelector('#healthcheckQuick');
