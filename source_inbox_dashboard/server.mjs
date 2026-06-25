@@ -743,6 +743,91 @@ async function serveVoiceOutput(req, res) {
   }
 }
 
+
+async function readJsonFile(filePath) {
+  try { return JSON.parse(await fs.readFile(filePath, 'utf8')); } catch { return null; }
+}
+
+async function latestMetaItems(kind = null, limit = 8) {
+  const metaDir = path.join(DATA, 'meta');
+  const names = await fs.readdir(metaDir).catch(() => []);
+  const items = [];
+  for (const name of names.filter(name => name.endsWith('.json'))) {
+    const item = await readJsonFile(path.join(metaDir, name));
+    if (!item || (kind && item.kind !== kind)) continue;
+    items.push(item);
+  }
+  items.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  return items.slice(0, limit);
+}
+
+async function tailJsonLines(filePath, limit = 8) {
+  try {
+    const raw = await fs.readFile(filePath, 'utf8');
+    return raw.trim().split('\n').filter(Boolean).slice(-limit).map(line => {
+      try { return JSON.parse(line); } catch { return { raw: line }; }
+    }).reverse();
+  } catch { return []; }
+}
+
+function parseToolLogStatus(text) {
+  const scripts = [];
+  for (const block of String(text || '').split('\n---\n')) {
+    const script = /^script=(.+)$/m.exec(block)?.[1] || null;
+    if (!script) continue;
+    const ok = /^ok=true$/m.test(block);
+    scripts.push({ script, ok });
+  }
+  return scripts;
+}
+
+async function imageActivityFor(item) {
+  const logPath = path.join(DATA, 'meta', `${item.id}.image-tools.log`);
+  let scripts = [];
+  try { scripts = parseToolLogStatus(await fs.readFile(logPath, 'utf8')); } catch {}
+  const filePath = String(item.path || '');
+  const stem = path.basename(filePath).replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/\.[^.]+$/, '');
+  const derived = path.join(DATA, 'derived', 'images');
+  const exists = async suffix => !!(await fs.stat(path.join(derived, `${stem}${suffix}`)).catch(() => null));
+  return {
+    id: item.id,
+    originalName: item.originalName,
+    createdAt: item.createdAt,
+    mime: item.mime,
+    bytes: item.bytes,
+    scripts,
+    hasOcr: await exists('.ocr.txt'),
+    hasVision: await exists('.vision.txt'),
+    hasPreciseVision: await exists('.precise-vision.txt')
+  };
+}
+
+async function handleActivity(req, res) {
+  const files = await latestMetaItems('file', 8);
+  const texts = await latestMetaItems('text', 5);
+  const urls = await latestMetaItems('url', 5);
+  const imageItems = files.filter(item => String(item.mime || '').startsWith('image/')).slice(0, 5);
+  const images = [];
+  for (const item of imageItems) images.push(await imageActivityFor(item));
+  const [branch, status, head] = await Promise.all([
+    runCommand('git', ['branch', '--show-current']),
+    runCommand('git', ['status', '--short']),
+    runCommand('git', ['log', '-1', '--oneline', '--decorate'])
+  ]);
+  return sendJson(res, 200, {
+    ok: true,
+    generatedAt: new Date().toISOString(),
+    latest: { files, texts, urls, images },
+    voice: { metrics: await tailJsonLines(VOICE_METRICS_FILE, 8) },
+    repo: {
+      branch: branch.stdout || null,
+      dirty: Boolean(status.stdout),
+      pending: safeLines(status.stdout, 20),
+      head: head.stdout || null
+    }
+  });
+}
+
 async function handleUrl(req, res) {
   const data = JSON.parse((await readBody(req, 256 * 1024)).toString('utf8'));
   const url = String(data.url || '').trim();
@@ -794,6 +879,7 @@ const server = http.createServer(async (req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
     if (req.method === 'GET' && pathname === '/api/reminders') return await handleListReminders(req, res);
     if (req.method === 'GET' && pathname === '/api/repo/status') return await handleRepoStatus(req, res);
+    if (req.method === 'GET' && pathname === '/api/activity') return await handleActivity(req, res);
     if (req.method === 'POST' && pathname === '/api/healthcheck/quick') return await handleHealthcheckQuick(req, res);
     if (req.method === 'POST' && pathname === '/api/reminders') return await handleAddReminder(req, res);
     if (req.method === 'POST' && pathname === '/api/reminders/complete') return await handleCompleteReminder(req, res);
