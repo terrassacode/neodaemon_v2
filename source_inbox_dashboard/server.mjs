@@ -834,6 +834,69 @@ async function processingStatusForFile(item) {
   return { id: item.id, originalName: item.originalName, mime: item.mime, createdAt: item.createdAt, overall, tasks };
 }
 
+
+async function readTextIfExists(filePath, maxChars = 5000) {
+  try {
+    const text = await fs.readFile(filePath, 'utf8');
+    return text.slice(0, maxChars);
+  } catch { return null; }
+}
+
+function derivedStemForFile(filePath) {
+  return path.basename(String(filePath || '')).replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/\.[^.]+$/, '');
+}
+
+async function latestFileMeta() {
+  return (await latestMetaItems('file', 1))[0] || null;
+}
+
+async function handleAnalyzeLatestFile(req, res) {
+  const item = await latestFileMeta();
+  if (!item) return sendJson(res, 404, { ok: false, error: 'no_file_found' });
+  const filePath = path.resolve(String(item.path || ''));
+  const filesRoot = path.resolve(DATA, 'files');
+  if (!filePath.startsWith(filesRoot + path.sep)) return sendJson(res, 403, { ok: false, error: 'forbidden_path' });
+  const stem = derivedStemForFile(filePath);
+  const mime = String(item.mime || '');
+  const result = {
+    ok: true,
+    id: item.id,
+    originalName: item.originalName,
+    mime,
+    createdAt: item.createdAt,
+    kind: 'unknown',
+    summary: '',
+    details: {},
+    recommendation: ''
+  };
+  if (mime.startsWith('image/')) {
+    const derived = path.join(DATA, 'derived', 'images');
+    const ocr = await readTextIfExists(path.join(derived, `${stem}.ocr.txt`), 3000);
+    const vision = await readTextIfExists(path.join(derived, `${stem}.vision.txt`), 2000);
+    const precise = await readTextIfExists(path.join(derived, `${stem}.precise-vision.txt`), 4000);
+    result.kind = 'image';
+    result.details = { hasOcr: Boolean(ocr), hasVision: Boolean(vision), hasPreciseVision: Boolean(precise), ocr, vision, precise };
+    result.summary = precise || vision || ocr || 'Imagen recibida, pero aún no hay texto/análisis disponible.';
+    result.recommendation = precise ? 'Ya tiene visión precisa.' : 'Si es importante o contiene texto pequeño, usa “visión precisa” con confirmación.';
+  } else if (mime === 'application/pdf') {
+    const derived = path.join(DATA, 'derived', 'pdfs');
+    let text = await readTextIfExists(path.join(derived, `${stem}.txt`), 5000);
+    if (!text) {
+      const pdfTool = path.join(REPO_ROOT, 'pdf_tools', 'extract_pdf.sh');
+      await runCommand(pdfTool, [filePath], { cwd: REPO_ROOT, timeout: 120000 });
+      text = await readTextIfExists(path.join(derived, `${stem}.txt`), 5000);
+    }
+    result.kind = 'pdf';
+    result.details = { hasText: Boolean(text), text };
+    result.summary = text ? text.slice(0, 1200) : 'PDF recibido, pero no se pudo extraer texto todavía.';
+    result.recommendation = text ? 'PDF extraído. Puedes pedir resumen o búsqueda sobre este texto.' : 'Revisar extracción PDF.';
+  } else {
+    result.summary = 'Archivo recibido. No hay analizador específico para este tipo todavía.';
+    result.recommendation = 'Añadir soporte específico si este formato se repite.';
+  }
+  return sendJson(res, 200, result);
+}
+
 async function handleProcessingQueue(req, res) {
   const files = await latestMetaItems('file', 30);
   const items = [];
@@ -923,6 +986,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname === '/api/repo/status') return await handleRepoStatus(req, res);
     if (req.method === 'GET' && pathname === '/api/activity') return await handleActivity(req, res);
     if (req.method === 'GET' && pathname === '/api/processing-queue') return await handleProcessingQueue(req, res);
+    if (req.method === 'POST' && pathname === '/api/analyze-latest-file') return await handleAnalyzeLatestFile(req, res);
     if (req.method === 'POST' && pathname === '/api/healthcheck/quick') return await handleHealthcheckQuick(req, res);
     if (req.method === 'POST' && pathname === '/api/reminders') return await handleAddReminder(req, res);
     if (req.method === 'POST' && pathname === '/api/reminders/complete') return await handleCompleteReminder(req, res);

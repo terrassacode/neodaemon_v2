@@ -112,6 +112,7 @@
       <button type="submit">Subir archivo</button>
     </form>
     <p class="small">Máximo 25 MB. No sobrescribe.</p>
+    <button id="analyzeLatestFile" type="button">Analizar último archivo</button>
     <div class="hint-card">Visión precisa usa Codex/OpenAI externo solo cuando pulsas el botón.</div>
     <button id="preciseVisionLatest" type="button">Analizar última imagen con visión precisa</button>
   </section>
@@ -326,11 +327,37 @@
 <script>
 const result = document.querySelector('#result');
 const preciseVisionLatestButton = document.querySelector('#preciseVisionLatest');
+const analyzeLatestFileButton = document.querySelector('#analyzeLatestFile');
 async function postJson(path, body) {
   const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json();
   result.textContent = JSON.stringify(data, null, 2);
 }
+
+
+analyzeLatestFileButton.addEventListener('click', async () => {
+  analyzeLatestFileButton.disabled = true;
+  analyzeLatestFileButton.textContent = 'Analizando último archivo...';
+  result.textContent = 'Analizando último archivo con herramientas locales...';
+  try {
+    const res = await fetch('/api/analyze-latest-file', { method: 'POST' });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'analyze_failed');
+    result.textContent = [
+      `Archivo: ${data.originalName}`,
+      `Tipo: ${data.kind}`,
+      '',
+      data.summary || 'Sin resumen.',
+      '',
+      `Recomendación: ${data.recommendation || '—'}`
+    ].join('\n');
+  } catch (err) {
+    result.textContent = `No se pudo analizar el último archivo: ${err.message}`;
+  } finally {
+    analyzeLatestFileButton.disabled = false;
+    analyzeLatestFileButton.textContent = 'Analizar último archivo';
+  }
+});
 
 preciseVisionLatestButton.addEventListener('click', async () => {
   if (!confirm('Esto enviará la última imagen subida a un proveedor externo para análisis preciso. ¿Continuar?')) return;
