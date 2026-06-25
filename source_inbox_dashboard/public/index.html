@@ -96,6 +96,7 @@
   <nav>
     <button class="active" data-screen="sources">Fuentes</button>
     <button data-screen="activity">Actividad</button>
+    <button data-screen="queue">Cola</button>
     <button data-screen="reminders">Recordatorios</button>
     <button data-screen="repo">Repositorio</button>
     <button data-screen="voice">Voz</button>
@@ -240,6 +241,24 @@
     <section>
       <h2>Voz</h2>
       <div id="activityVoice" class="list compact-scroll">Cargando...</div>
+    </section>
+  </main>
+
+
+  <main id="queue" class="screen">
+    <section>
+      <div class="toolbar">
+        <div>
+          <h2>Cola de procesamiento</h2>
+          <p class="small">Estado de OCR, Vision, PDF y análisis preciso de los últimos archivos.</p>
+        </div>
+        <button id="queueRefresh" type="button">Refrescar</button>
+      </div>
+      <div id="queueSummary" class="next-action">Cargando cola...</div>
+    </section>
+    <section>
+      <h2>Procesos recientes</h2>
+      <div id="queueList" class="list scroll-list">Cargando...</div>
     </section>
   </main>
 
@@ -442,6 +461,35 @@ function renderTimeline(data) {
 
 
 
+
+function queueBadge(status) {
+  if (status === 'done') return 'ok';
+  if (status === 'failed') return 'fail';
+  if (status === 'pending') return 'warn';
+  return 'info';
+}
+function renderProcessingQueue(data) {
+  const items = data.items || [];
+  const pending = items.filter(item => item.overall === 'pending').length;
+  const failed = items.filter(item => item.overall === 'failed').length;
+  document.querySelector('#queueSummary').textContent = `${items.length} archivos recientes · ${pending} pendientes · ${failed} con error`;
+  document.querySelector('#queueList').innerHTML = items.length ? items.map(item => {
+    const tasks = (item.tasks || []).map(task => `<span class="badge ${queueBadge(task.status)}">${escapeHtml(task.name)}: ${escapeHtml(task.status)}</span>`).join(' ');
+    return `<div class="row"><div><strong>${escapeHtml(item.originalName || item.id)}</strong><div class="small">${escapeHtml(item.mime || '')} · ${escapeHtml(item.createdAt || '')}</div><div class="small">${tasks}</div></div><span class="badge ${queueBadge(item.overall)}">${escapeHtml(item.overall)}</span></div>`;
+  }).join('') : 'Sin procesos recientes.';
+}
+async function loadProcessingQueue() {
+  document.querySelector('#queueSummary').textContent = 'Cargando cola...';
+  try {
+    const res = await fetch('/api/processing-queue');
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'queue_failed');
+    renderProcessingQueue(data);
+  } catch (err) {
+    document.querySelector('#queueSummary').textContent = `No se pudo cargar cola: ${err.message}`;
+  }
+}
+
 function yesNo(value) { return value ? 'sí' : 'no'; }
 function renderActivity(data) {
   const summary = document.querySelector('#activitySummary');
@@ -578,6 +626,7 @@ document.querySelectorAll('nav button').forEach(btn => {
     document.getElementById(btn.dataset.screen).classList.add('active');
     if (btn.dataset.screen === 'reminders') await loadReminders();
     if (btn.dataset.screen === 'activity') await loadActivity();
+    if (btn.dataset.screen === 'queue') await loadProcessingQueue();
     if (btn.dataset.screen === 'repo') await loadRepoStatus();
   });
 });
@@ -585,6 +634,7 @@ document.querySelectorAll('nav button').forEach(btn => {
 
 document.querySelector('#repoRefresh').addEventListener('click', loadRepoStatus);
 document.querySelector('#activityRefresh').addEventListener('click', loadActivity);
+document.querySelector('#queueRefresh').addEventListener('click', loadProcessingQueue);
 document.querySelector('#healthcheckQuick').addEventListener('click', async () => {
   const box = document.querySelector('#healthcheckResult');
   const btn = document.querySelector('#healthcheckQuick');
