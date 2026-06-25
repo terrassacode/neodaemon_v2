@@ -802,6 +802,48 @@ async function imageActivityFor(item) {
   };
 }
 
+
+async function processingStatusForFile(item) {
+  const filePath = String(item.path || '');
+  const stem = path.basename(filePath).replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/\.[^.]+$/, '');
+  const derivedImages = path.join(DATA, 'derived', 'images');
+  const derivedPdfs = path.join(DATA, 'derived', 'pdfs');
+  const exists = async file => !!(await fs.stat(file).catch(() => null));
+  const imageLogPath = path.join(DATA, 'meta', `${item.id}.image-tools.log`);
+  const pdfLogPath = path.join(DATA, 'meta', `${item.id}.pdf-tools.log`);
+  let imageScripts = [];
+  let pdfScripts = [];
+  try { imageScripts = parseToolLogStatus(await fs.readFile(imageLogPath, 'utf8')); } catch {}
+  try { pdfScripts = parseToolLogStatus(await fs.readFile(pdfLogPath, 'utf8')); } catch {}
+  const scriptStatus = name => {
+    const script = imageScripts.find(s => s.script === name) || pdfScripts.find(s => s.script === name);
+    if (!script) return 'pending';
+    return script.ok ? 'done' : 'failed';
+  };
+  const tasks = [];
+  if (String(item.mime || '').startsWith('image/')) {
+    tasks.push({ name: 'inspect', status: scriptStatus('inspect_image.mjs') });
+    tasks.push({ name: 'ocr', status: await exists(path.join(derivedImages, `${stem}.ocr.txt`)) ? 'done' : scriptStatus('ocr_image.mjs') });
+    tasks.push({ name: 'vision-local', status: await exists(path.join(derivedImages, `${stem}.vision.txt`)) ? 'done' : scriptStatus('vision_image.mjs') });
+    tasks.push({ name: 'vision-precise', status: await exists(path.join(derivedImages, `${stem}.precise-vision.txt`)) ? 'done' : 'manual' });
+  } else if (item.mime === 'application/pdf') {
+    tasks.push({ name: 'pdf-extract', status: await exists(path.join(derivedPdfs, `${stem}.txt`)) ? 'done' : scriptStatus('extract_pdf.sh') });
+  }
+  const rank = { failed: 0, pending: 1, manual: 2, done: 3 };
+  const overall = tasks.some(t => t.status === 'failed') ? 'failed' : tasks.some(t => t.status === 'pending') ? 'pending' : 'done';
+  return { id: item.id, originalName: item.originalName, mime: item.mime, createdAt: item.createdAt, overall, tasks };
+}
+
+async function handleProcessingQueue(req, res) {
+  const files = await latestMetaItems('file', 30);
+  const items = [];
+  for (const item of files) {
+    const status = await processingStatusForFile(item);
+    if (status.tasks.length) items.push(status);
+  }
+  return sendJson(res, 200, { ok: true, generatedAt: new Date().toISOString(), items: items.slice(0, 20) });
+}
+
 async function handleActivity(req, res) {
   const files = await latestMetaItems('file', 8);
   const texts = await latestMetaItems('text', 5);
@@ -880,6 +922,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname === '/api/reminders') return await handleListReminders(req, res);
     if (req.method === 'GET' && pathname === '/api/repo/status') return await handleRepoStatus(req, res);
     if (req.method === 'GET' && pathname === '/api/activity') return await handleActivity(req, res);
+    if (req.method === 'GET' && pathname === '/api/processing-queue') return await handleProcessingQueue(req, res);
     if (req.method === 'POST' && pathname === '/api/healthcheck/quick') return await handleHealthcheckQuick(req, res);
     if (req.method === 'POST' && pathname === '/api/reminders') return await handleAddReminder(req, res);
     if (req.method === 'POST' && pathname === '/api/reminders/complete') return await handleCompleteReminder(req, res);
