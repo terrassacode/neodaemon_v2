@@ -912,6 +912,7 @@ async function handleActivity(req, res) {
   const files = await latestMetaItems('file', 8);
   const filesWithPreview = files.map(item => ({
     ...item,
+    openUrl: allowedMime.has(String(item.mime || '')) ? `/source-files/${encodeURIComponent(item.id)}` : null,
     previewUrl: String(item.mime || '').startsWith('image/') ? `/source-files/${encodeURIComponent(item.id)}` : null,
     fileType: String(item.mime || '').includes('pdf') ? 'pdf' : String(item.mime || '').startsWith('image/') ? 'image' : 'file'
   }));
