@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 const ROOT = path.resolve('/openclaw/openclaw_v2/source_inbox_dashboard');
 const PUBLIC = path.join(ROOT, 'public');
 const DATA = path.resolve('/openclaw/openclaw_v2/data/source-inbox');
+const FILES_ROOT = path.join(DATA, 'files');
 const MAX_UPLOAD = 25 * 1024 * 1024;
 const PORT = Number(process.env.SOURCE_INBOX_PORT || 8788);
 const HOST = process.env.SOURCE_INBOX_HOST || '127.0.0.1';
@@ -909,6 +910,11 @@ async function handleProcessingQueue(req, res) {
 
 async function handleActivity(req, res) {
   const files = await latestMetaItems('file', 8);
+  const filesWithPreview = files.map(item => ({
+    ...item,
+    previewUrl: String(item.mime || '').startsWith('image/') ? `/source-files/${encodeURIComponent(item.id)}` : null,
+    fileType: String(item.mime || '').includes('pdf') ? 'pdf' : String(item.mime || '').startsWith('image/') ? 'image' : 'file'
+  }));
   const texts = await latestMetaItems('text', 5);
   const urls = await latestMetaItems('url', 5);
   const imageItems = files.filter(item => String(item.mime || '').startsWith('image/')).slice(0, 5);
@@ -922,7 +928,7 @@ async function handleActivity(req, res) {
   return sendJson(res, 200, {
     ok: true,
     generatedAt: new Date().toISOString(),
-    latest: { files, texts, urls, images },
+    latest: { files: filesWithPreview, texts, urls, images },
     voice: { metrics: await tailJsonLines(VOICE_METRICS_FILE, 8) },
     repo: {
       branch: branch.stdout || null,
@@ -931,6 +937,29 @@ async function handleActivity(req, res) {
       head: head.stdout || null
     }
   });
+}
+
+async function serveSourceFile(req, res) {
+  const url = new URL(req.url, 'http://localhost');
+  const id = decodeURIComponent(url.pathname.replace(/^\/source-files\//, ''));
+  const meta = await readMeta(id);
+  if (!meta || meta.kind !== 'file') return sendJson(res, 404, { ok: false, error: 'not_found' }, req);
+  const filePath = path.resolve(String(meta.path || ''));
+  if (!filePath.startsWith(FILES_ROOT + path.sep)) return sendJson(res, 403, { ok: false, error: 'forbidden_path' }, req);
+  const mime = String(meta.mime || 'application/octet-stream');
+  if (!allowedMime.has(mime)) return sendJson(res, 415, { ok: false, error: 'unsupported_type' }, req);
+  try {
+    const body = await fs.readFile(filePath);
+    res.writeHead(200, {
+      'content-type': mime,
+      'cache-control': 'private, max-age=300',
+      'content-disposition': `inline; filename="${path.basename(filePath).replace(/"/g, '')}"`
+    });
+    if (req.method === 'HEAD') return res.end();
+    res.end(body);
+  } catch {
+    return sendJson(res, 404, { ok: false, error: 'file_missing' }, req);
+  }
 }
 
 async function handleUrl(req, res) {
@@ -985,6 +1014,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname === '/api/reminders') return await handleListReminders(req, res);
     if (req.method === 'GET' && pathname === '/api/repo/status') return await handleRepoStatus(req, res);
     if (req.method === 'GET' && pathname === '/api/activity') return await handleActivity(req, res);
+    if ((req.method === 'GET' || req.method === 'HEAD') && pathname.startsWith('/source-files/')) return await serveSourceFile(req, res);
     if (req.method === 'GET' && pathname === '/api/processing-queue') return await handleProcessingQueue(req, res);
     if (req.method === 'POST' && pathname === '/api/analyze-latest-file') return await handleAnalyzeLatestFile(req, res);
     if (req.method === 'POST' && pathname === '/api/healthcheck/quick') return await handleHealthcheckQuick(req, res);
