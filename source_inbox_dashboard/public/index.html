@@ -188,6 +188,10 @@
       </div>
       <div class="hint-card">Pulsa para grabar. Pulsa otra vez para parar. Revisa el texto y envíalo a Nia cuando esté bien.</div>
       <button id="pushToTalk" type="button">🎙️ Hablar con Nia</button>
+      <div class="toolbar">
+        <button id="startVoiceCall" type="button">📞 Llamar a Nia</button>
+        <button id="stopVoiceCall" type="button" disabled>Colgar</button>
+      </div>
       <div id="voiceStatus" class="next-action">Listo para hablar.</div>
       <pre id="voiceTranscript">Transcripción pendiente.</pre>
       <label for="voiceSttModel">Modo STT</label>
@@ -727,10 +731,43 @@ const MIN_RECORDING_MS = 900;
 const MAX_RECORDING_MS = 30000;
 const MIN_WAV_BYTES = 8000;
 const pttButton = document.querySelector('#pushToTalk');
+const startVoiceCallButton = document.querySelector('#startVoiceCall');
+const stopVoiceCallButton = document.querySelector('#stopVoiceCall');
 const voiceTranscript = document.querySelector('#voiceTranscript');
 const voiceStatus = document.querySelector('#voiceStatus');
+let voiceCallActive = false;
+let voiceCallLoopTimer = null;
+let voiceCallTurnTimer = null;
 function setVoiceStatus(text) {
   voiceStatus.textContent = text;
+}
+
+function setVoiceCallActive(active) {
+  voiceCallActive = active;
+  startVoiceCallButton.disabled = active;
+  stopVoiceCallButton.disabled = !active;
+  if (!active && voiceCallLoopTimer) {
+    clearTimeout(voiceCallLoopTimer);
+    voiceCallLoopTimer = null;
+  }
+  if (!active && voiceCallTurnTimer) {
+    clearTimeout(voiceCallTurnTimer);
+    voiceCallTurnTimer = null;
+  }
+}
+
+function scheduleVoiceCallListen(delayMs = 700) {
+  if (!voiceCallActive) return;
+  if (voiceCallLoopTimer) clearTimeout(voiceCallLoopTimer);
+  voiceCallLoopTimer = setTimeout(async () => {
+    voiceCallLoopTimer = null;
+    if (!voiceCallActive || audioContext) return;
+    await startPushToTalk().catch(err => {
+      setVoiceCallActive(false);
+      setVoiceStatus('Llamada detenida por error de micrófono.');
+      voiceTranscript.textContent = `Error micrófono: ${err.message}`;
+    });
+  }, delayMs);
 }
 
 function encodeWav(samples, sampleRate) {
@@ -798,6 +835,10 @@ async function startPushToTalk() {
   pttButton.classList.add('active');
   setVoiceStatus('Escuchando...');
   voiceTranscript.textContent = 'Grabando audio local...';
+  if (voiceCallActive) {
+    if (voiceCallTurnTimer) clearTimeout(voiceCallTurnTimer);
+    voiceCallTurnTimer = setTimeout(() => stopPushToTalk(), 4500);
+  }
 }
 
 async function stopPushToTalk() {
@@ -807,6 +848,10 @@ async function stopPushToTalk() {
   const sampleRate = context.sampleRate;
   const chunks = audioChunks;
   audioProcessor?.disconnect();
+  if (voiceCallTurnTimer) {
+    clearTimeout(voiceCallTurnTimer);
+    voiceCallTurnTimer = null;
+  }
   audioSource?.disconnect();
   audioStream?.getTracks().forEach(track => track.stop());
   await context.close().catch(() => {});
@@ -819,6 +864,7 @@ async function stopPushToTalk() {
   if (elapsed < MIN_RECORDING_MS) {
     setVoiceStatus('Grabación demasiado corta.');
     voiceTranscript.textContent = 'Mantén pulsado un poco más antes de soltar.';
+    if (voiceCallActive) scheduleVoiceCallListen(900);
     return;
   }
   const samples = mergeAudioChunks(chunks);
@@ -826,6 +872,7 @@ async function stopPushToTalk() {
   if (wav.size < MIN_WAV_BYTES) {
     setVoiceStatus('Audio insuficiente.');
     voiceTranscript.textContent = 'No se capturó audio suficiente. Mantén pulsado y habla cerca del micrófono.';
+    if (voiceCallActive) scheduleVoiceCallListen(900);
     return;
   }
   const fd = new FormData();
@@ -847,12 +894,14 @@ async function stopPushToTalk() {
       await askNiaAndSpeak();
     } else if (voiceAutoSend.checked) {
       setVoiceStatus('Transcripción dudosa. Revisa antes de enviar.');
+      if (voiceCallActive) scheduleVoiceCallListen(1200);
     } else {
       setVoiceStatus('Transcripción lista para revisar.');
     }
   } else {
     setVoiceStatus('Error transcribiendo.');
     voiceTranscript.textContent = JSON.stringify(data, null, 2);
+    if (voiceCallActive) scheduleVoiceCallListen(1500);
   }
   pttButton.disabled = false;
   pttButton.textContent = '🎙️ Hablar con Nia';
@@ -870,6 +919,46 @@ pttButton.addEventListener('click', async (e) => {
       voiceTranscript.textContent = `Error micrófono: ${err.message}`;
     });
   }
+});
+
+async function cancelActiveRecording() {
+  if (!audioContext) return;
+  const context = audioContext;
+  audioProcessor?.disconnect();
+  audioSource?.disconnect();
+  audioStream?.getTracks().forEach(track => track.stop());
+  await context.close().catch(() => {});
+  audioContext = null;
+  audioStream = null;
+  audioSource = null;
+  audioProcessor = null;
+  audioChunks = [];
+  pttButton.textContent = '🎙️ Hablar con Nia';
+  pttButton.classList.remove('active');
+}
+
+startVoiceCallButton.addEventListener('click', async () => {
+  setVoiceCallActive(true);
+  document.querySelector('#voiceResponseMode').value = 'fast';
+  document.querySelector('#voiceSttModel').value = 'base';
+  voiceAutoSend.checked = true;
+  pauseVoiceAutoButton.disabled = false;
+  voiceResult.textContent = 'Llamada iniciada. Habla cuando veas “Escuchando...”.';
+  setVoiceStatus('Llamada iniciada. Preparando micrófono...');
+  await startPushToTalk().catch(err => {
+    setVoiceCallActive(false);
+    setVoiceStatus('No se pudo iniciar llamada.');
+    voiceTranscript.textContent = `Error micrófono: ${err.message}`;
+  });
+});
+
+stopVoiceCallButton.addEventListener('click', async () => {
+  setVoiceCallActive(false);
+  voiceAutoSend.checked = false;
+  pauseVoiceAutoButton.disabled = true;
+  await cancelActiveRecording();
+  setVoiceStatus('Llamada finalizada.');
+  voiceResult.textContent = 'Has colgado la llamada web.';
 });
 const voiceResult = document.querySelector('#voiceResult');
 const voiceAudio = document.querySelector('#voiceAudio');
@@ -912,6 +1001,21 @@ function showVoiceMetrics(label, metrics = {}, extra = {}) {
   if (extra.model) parts.push(`modelo ${extra.model}`);
   if (extra.duration != null) parts.push(`audio ${Number(extra.duration).toFixed(1)}s`);
   voiceMetrics.textContent = `Métricas ${label}: ${parts.length ? parts.join(' · ') : 'sin datos'}`;
+}
+async function playVoiceAudio(waitForEnd = false) {
+  await voiceAudio.play().catch(() => {});
+  if (!waitForEnd) return;
+  await new Promise(resolve => {
+    const timeout = setTimeout(resolve, 45000);
+    const done = () => {
+      clearTimeout(timeout);
+      voiceAudio.removeEventListener('ended', done);
+      voiceAudio.removeEventListener('error', done);
+      resolve();
+    };
+    voiceAudio.addEventListener('ended', done, { once: true });
+    voiceAudio.addEventListener('error', done, { once: true });
+  });
 }
 function transcriptionLooksGood(text) {
   const value = String(text || '').trim();
@@ -973,15 +1077,18 @@ async function askNiaAndSpeak() {
       addVoiceTurn('Nia', data.reply);
       askNiaVoiceButton.textContent = '🔊 Reproduciendo respuesta';
       setVoiceStatus('Hablando...');
-      await voiceAudio.play().catch(() => {});
+      await playVoiceAudio(voiceCallActive);
       setVoiceStatus('Listo para hablar otra vez.');
+      if (voiceCallActive) scheduleVoiceCallListen(800);
     } else {
       setVoiceStatus('Error recibiendo respuesta de Nia.');
       voiceResult.textContent = JSON.stringify(data, null, 2);
+      if (voiceCallActive) scheduleVoiceCallListen(1500);
     }
   } catch (err) {
     setVoiceStatus('Error enviando a Nia.');
     voiceResult.textContent = `Error enviando a Nia: ${err.message}`;
+    if (voiceCallActive) scheduleVoiceCallListen(1500);
   } finally {
     askNiaVoiceButton.disabled = false;
     pttButton.disabled = false;
@@ -995,7 +1102,7 @@ replayNiaVoiceButton.addEventListener('click', async () => {
   setVoiceStatus('Repitiendo última respuesta...');
   voiceAudio.src = lastNiaAudioUrl;
   voiceAudio.style.display = 'block';
-  await voiceAudio.play().catch(() => {});
+  await playVoiceAudio(false);
   setVoiceStatus('Listo para hablar otra vez.');
 });
 
