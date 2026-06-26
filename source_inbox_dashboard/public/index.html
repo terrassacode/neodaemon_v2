@@ -743,9 +743,15 @@ let audioSource = null;
 let audioProcessor = null;
 let audioChunks = [];
 let recordingStartedAt = 0;
+let voiceDetectedInTurn = false;
+let lastVoiceAt = 0;
 const MIN_RECORDING_MS = 900;
 const MAX_RECORDING_MS = 30000;
 const MIN_WAV_BYTES = 8000;
+const CALL_TURN_MAX_MS = 6500;
+const CALL_MIN_VOICE_MS = 900;
+const CALL_SILENCE_AFTER_VOICE_MS = 950;
+const CALL_VOICE_RMS = 0.018;
 const pttButton = document.querySelector('#pushToTalk');
 const startVoiceCallButton = document.querySelector('#startVoiceCall');
 const stopVoiceCallButton = document.querySelector('#stopVoiceCall');
@@ -846,6 +852,8 @@ async function startPushToTalk() {
   }
   if (audioContext) return;
   audioChunks = [];
+  voiceDetectedInTurn = false;
+  lastVoiceAt = 0;
   audioStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
   audioContext = new (window.AudioContext || window.webkitAudioContext)();
   audioSource = audioContext.createMediaStreamSource(audioStream);
@@ -853,6 +861,19 @@ async function startPushToTalk() {
   audioProcessor.onaudioprocess = (event) => {
     const input = event.inputBuffer.getChannelData(0);
     audioChunks.push(new Float32Array(input));
+    if (voiceCallActive && audioContext) {
+      let sum = 0;
+      for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
+      const rms = Math.sqrt(sum / input.length);
+      const now = Date.now();
+      if (rms > CALL_VOICE_RMS) {
+        voiceDetectedInTurn = true;
+        lastVoiceAt = now;
+        setVoiceCallState('Te escucho...', 'live');
+      } else if (voiceDetectedInTurn && now - recordingStartedAt > CALL_MIN_VOICE_MS && now - lastVoiceAt > CALL_SILENCE_AFTER_VOICE_MS) {
+        stopPushToTalk();
+      }
+    }
     if (Date.now() - recordingStartedAt > MAX_RECORDING_MS) stopPushToTalk();
   };
   audioSource.connect(audioProcessor);
@@ -865,7 +886,7 @@ async function startPushToTalk() {
   voiceTranscript.textContent = voiceCallActive ? 'Escuchando turno de llamada...' : 'Grabando audio local...';
   if (voiceCallActive) {
     if (voiceCallTurnTimer) clearTimeout(voiceCallTurnTimer);
-    voiceCallTurnTimer = setTimeout(() => stopPushToTalk(), 4500);
+    voiceCallTurnTimer = setTimeout(() => stopPushToTalk(), CALL_TURN_MAX_MS);
   }
 }
 
@@ -893,6 +914,13 @@ async function stopPushToTalk() {
     setVoiceStatus('Grabación demasiado corta.');
     voiceTranscript.textContent = 'Mantén pulsado un poco más antes de soltar.';
     if (voiceCallActive) scheduleVoiceCallListen(900);
+    return;
+  }
+  if (voiceCallActive && !voiceDetectedInTurn) {
+    setVoiceStatus('Sin voz detectada. Sigo escuchando...');
+    setVoiceCallState('Esperando tu voz...', 'live');
+    voiceTranscript.textContent = 'No he detectado voz suficiente en este turno.';
+    scheduleVoiceCallListen(600);
     return;
   }
   const samples = mergeAudioChunks(chunks);
