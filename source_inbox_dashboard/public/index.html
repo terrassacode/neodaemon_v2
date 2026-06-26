@@ -219,6 +219,7 @@
         <option value="full">Completo · tareas serias</option>
       </select>
       <p class="small">Rápido evita herramientas y contexto pesado. Completo mantiene el comportamiento anterior.</p>
+      <div id="voicePhoneStyleNotice" class="hint-card" style="display:none">Modo teléfono activo: respuestas de 1–2 frases para reducir espera y sonar más natural.</div>
       <label class="small"><input id="voiceAutoSend" type="checkbox"> Autoenviar transcripciones buenas</label>
       <button id="pauseVoiceAuto" type="button" disabled>Pausar modo automático</button>
       <div class="manual-voice-controls">
@@ -777,6 +778,7 @@ function setVoiceCallActive(active) {
   startVoiceCallButton.disabled = active;
   stopVoiceCallButton.disabled = !active;
   startVoiceCallButton.textContent = active ? '📞 Llamada en curso' : '📞 Llamar a Nia';
+  document.querySelector('#voicePhoneStyleNotice').style.display = active ? 'block' : 'none';
   if (!active) setVoiceCallState('Modo llamada listo.', '');
   if (!active && voiceCallLoopTimer) {
     clearTimeout(voiceCallLoopTimer);
@@ -1125,12 +1127,12 @@ async function askNiaAndSpeak() {
     const res = await fetch('/api/voice/ask-nia', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text, mode: document.querySelector('#voiceResponseMode').value })
+      body: JSON.stringify({ text, mode: document.querySelector('#voiceResponseMode').value, voiceStyle: voiceCallActive ? 'phone' : 'default' })
     });
     const data = await res.json();
     if (data.ok) {
       voiceResult.textContent = data.reply;
-      showVoiceMetrics('respuesta', data.metrics, { mode: data.mode });
+      showVoiceMetrics('respuesta', data.metrics, { mode: data.voiceStyle === 'phone' ? 'teléfono' : data.mode });
       voiceAudio.src = data.audioUrl;
       voiceAudio.style.display = 'block';
       lastNiaReply = data.reply || '';

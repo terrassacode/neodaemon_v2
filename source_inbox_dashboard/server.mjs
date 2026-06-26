@@ -626,7 +626,20 @@ function extractAgentText(payload) {
   return String(direct || metaVisible || metaRaw || '').trim();
 }
 
-function voiceAgentPrompt(text, mode = 'fast') {
+function voiceAgentPrompt(text, mode = 'fast', style = 'default') {
+  if (style === 'phone') {
+    return [
+      'Modo llamada telefónica de Nia.',
+      'Responde en español como si estuvieras hablando por teléfono con Albert.',
+      'Máximo 2 frases cortas. Natural, cercana y directa.',
+      'No hagas listas. No uses markdown. No expliques procesos internos.',
+      'Si necesitas más contexto, pregunta una sola cosa concreta.',
+      'Si la petición requiere acciones reales, di brevemente que lo hacemos en modo completo.',
+      'Máximo 220 caracteres.',
+      '',
+      `Albert dice: ${text}`
+    ].join('\n');
+  }
   if (mode === 'full') {
     return [
       'Mensaje recibido desde el panel de voz de Albert.',
@@ -667,9 +680,11 @@ async function handleVoiceAskNia(req, res) {
   const text = String(data.text || '').trim();
   const requestedMode = String(data.mode || 'fast').trim().toLowerCase();
   const mode = requestedMode === 'full' ? 'full' : 'fast';
+  const requestedStyle = String(data.voiceStyle || data.style || 'default').trim().toLowerCase();
+  const voiceStyle = requestedStyle === 'phone' ? 'phone' : 'default';
   if (!text) return sendJson(res, 400, { ok: false, error: 'missing_text' });
   if (text.length > 1200) return sendJson(res, 400, { ok: false, error: 'text_too_long', max: 1200 });
-  const prompt = voiceAgentPrompt(text, mode);
+  const prompt = voiceAgentPrompt(text, mode, voiceStyle);
   const agentStart = process.hrtime.bigint();
   const agentId = mode === 'fast' ? VOICE_FAST_AGENT_ID : VOICE_AGENT_ID;
   const sessionId = mode === 'fast' ? VOICE_FAST_AGENT_SESSION : VOICE_AGENT_SESSION;
@@ -700,7 +715,7 @@ async function handleVoiceAskNia(req, res) {
       metrics
     });
   }
-  const maxReplyLength = mode === 'fast' ? 500 : 800;
+  const maxReplyLength = voiceStyle === 'phone' ? 260 : mode === 'fast' ? 500 : 800;
   const spokenText = reply.length > maxReplyLength ? `${reply.slice(0, maxReplyLength - 3)}...` : reply;
   const audio = await createVoiceAudio(spokenText);
   const metrics = { agentMs, ttsMs: audio.metrics?.ttsMs || null, totalMs: elapsedMs(totalStart) };
@@ -715,7 +730,7 @@ async function handleVoiceAskNia(req, res) {
       metrics
     });
   }
-  await appendVoiceMetric({ kind: 'ask-nia', mode, ok: true, metrics, textLength: text.length, replyLength: reply.length });
+  await appendVoiceMetric({ kind: 'ask-nia', mode, voiceStyle, ok: true, metrics, textLength: text.length, replyLength: reply.length });
   return sendJson(res, 201, {
     ok: true,
     reply,
@@ -724,6 +739,7 @@ async function handleVoiceAskNia(req, res) {
     bytes: audio.bytes,
     metrics,
     mode,
+    voiceStyle,
     agent: { id: agentId, session: sessionId },
     createdAt: new Date().toISOString()
   });
