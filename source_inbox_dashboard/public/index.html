@@ -85,7 +85,18 @@
     .muted { color:var(--muted); }
     .toolbar { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
     .toolbar button { width:auto; margin:0; padding:9px 12px; }
-    @media (max-width: 900px) { .app-header, .source-grid { grid-template-columns: 1fr; } .repo-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); } .repo-card { padding:14px; min-height:96px; } .timeline { grid-template-columns: repeat(9, 120px); } .row { grid-template-columns: 1fr; } .file-row { grid-template-columns: 54px minmax(0, 1fr); } .row > :last-child { justify-content:flex-start; } .file-row > :last-child { grid-column: 1 / -1; } .scroll-list { max-height: 360px; } body { padding:16px 10px 36px; } section, .panel { padding:14px; } }
+    .call-panel { border:1px solid rgba(59,130,246,.38); background:linear-gradient(135deg, rgba(59,130,246,.18), rgba(139,92,246,.10)); border-radius:18px; padding:14px; margin:12px 0; }
+    .call-controls { display:grid; grid-template-columns: minmax(0, 1fr) auto; gap:10px; align-items:center; }
+    .call-primary { min-height:54px; margin:0; font-size:.92rem; border-radius:16px; }
+    .call-hangup { width:auto; min-height:54px; margin:0; padding:0 18px; border-radius:16px; background:linear-gradient(135deg, #dc2626, #991b1b); }
+    .call-state { margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; color:#bfdbfe; font-weight:800; }
+    .call-dot { width:10px; height:10px; border-radius:999px; background:#64748b; box-shadow:0 0 0 4px rgba(100,116,139,.14); }
+    .call-dot.live { background:#22c55e; box-shadow:0 0 0 4px rgba(34,197,94,.14); }
+    .call-dot.busy { background:#eab308; box-shadow:0 0 0 4px rgba(234,179,8,.14); }
+    .call-dot.ended { background:#ef4444; box-shadow:0 0 0 4px rgba(239,68,68,.14); }
+    .manual-voice-controls { border-top:1px solid rgba(148,163,184,.12); margin-top:14px; padding-top:12px; }
+    body.call-active #pushToTalk { display:none; }
+    @media (max-width: 900px) { .app-header, .source-grid { grid-template-columns: 1fr; } .repo-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); } .repo-card { padding:14px; min-height:96px; } .timeline { grid-template-columns: repeat(9, 120px); } .row { grid-template-columns: 1fr; } .file-row { grid-template-columns: 54px minmax(0, 1fr); } .row > :last-child { justify-content:flex-start; } .file-row > :last-child { grid-column: 1 / -1; } .call-controls { grid-template-columns: 1fr; } .call-hangup { width:100%; } .scroll-list { max-height: 360px; } body { padding:16px 10px 36px; } section, .panel { padding:14px; } }
   </style>
 </head>
 <body>
@@ -186,11 +197,12 @@
           <p class="small">Genera audio local con Piper. No usa APIs externas en runtime.</p>
         </div>
       </div>
-      <div class="hint-card">Pulsa para grabar. Pulsa otra vez para parar. Revisa el texto y envíalo a Nia cuando esté bien.</div>
-      <button id="pushToTalk" type="button">🎙️ Hablar con Nia</button>
-      <div class="toolbar">
-        <button id="startVoiceCall" type="button">📞 Llamar a Nia</button>
-        <button id="stopVoiceCall" type="button" disabled>Colgar</button>
+      <div class="call-panel">
+        <div class="call-controls">
+          <button id="startVoiceCall" class="call-primary" type="button">📞 Llamar a Nia</button>
+          <button id="stopVoiceCall" class="call-hangup" type="button" disabled>Colgar</button>
+        </div>
+        <div class="call-state"><span id="voiceCallDot" class="call-dot"></span><span id="voiceCallLabel">Modo llamada listo.</span></div>
       </div>
       <div id="voiceStatus" class="next-action">Listo para hablar.</div>
       <pre id="voiceTranscript">Transcripción pendiente.</pre>
@@ -209,6 +221,9 @@
       <p class="small">Rápido evita herramientas y contexto pesado. Completo mantiene el comportamiento anterior.</p>
       <label class="small"><input id="voiceAutoSend" type="checkbox"> Autoenviar transcripciones buenas</label>
       <button id="pauseVoiceAuto" type="button" disabled>Pausar modo automático</button>
+      <div class="manual-voice-controls">
+      <div class="hint-card">Modo manual: pulsa para grabar, pulsa otra vez para parar, revisa el texto y envíalo a Nia cuando esté bien.</div>
+      <button id="pushToTalk" type="button">🎙️ Hablar con Nia</button>
       <form id="voiceForm">
         <label for="voiceText">Mensaje para Nia / texto a convertir en voz</label>
         <textarea id="voiceText" name="text" maxlength="800" placeholder="Ej: Hola Nia, dime si me escuchas." required></textarea>
@@ -217,6 +232,7 @@
       <div class="hint-card">Modo seguro: el autoenvío está apagado por defecto. Si está activado y la transcripción parece dudosa, se queda esperando revisión.</div>
       <button id="askNiaVoice" type="button">Enviar a Nia y escuchar</button>
       <button id="replayNiaVoice" type="button" disabled>Repetir última respuesta</button>
+      </div>
       <p class="small">Límite: 800 caracteres. Los WAV quedan en <code>data/voice/outputs</code>.</p>
     </section>
     <section>
@@ -733,6 +749,8 @@ const MIN_WAV_BYTES = 8000;
 const pttButton = document.querySelector('#pushToTalk');
 const startVoiceCallButton = document.querySelector('#startVoiceCall');
 const stopVoiceCallButton = document.querySelector('#stopVoiceCall');
+const voiceCallDot = document.querySelector('#voiceCallDot');
+const voiceCallLabel = document.querySelector('#voiceCallLabel');
 const voiceTranscript = document.querySelector('#voiceTranscript');
 const voiceStatus = document.querySelector('#voiceStatus');
 let voiceCallActive = false;
@@ -742,10 +760,18 @@ function setVoiceStatus(text) {
   voiceStatus.textContent = text;
 }
 
+function setVoiceCallState(label, state = 'idle') {
+  voiceCallLabel.textContent = label;
+  voiceCallDot.className = `call-dot ${state}`.trim();
+}
+
 function setVoiceCallActive(active) {
   voiceCallActive = active;
+  document.body.classList.toggle('call-active', active);
   startVoiceCallButton.disabled = active;
   stopVoiceCallButton.disabled = !active;
+  startVoiceCallButton.textContent = active ? '📞 Llamada en curso' : '📞 Llamar a Nia';
+  if (!active) setVoiceCallState('Modo llamada listo.', '');
   if (!active && voiceCallLoopTimer) {
     clearTimeout(voiceCallLoopTimer);
     voiceCallLoopTimer = null;
@@ -765,6 +791,7 @@ function scheduleVoiceCallListen(delayMs = 700) {
     await startPushToTalk().catch(err => {
       setVoiceCallActive(false);
       setVoiceStatus('Llamada detenida por error de micrófono.');
+      setVoiceCallState('Error de micrófono.', 'ended');
       voiceTranscript.textContent = `Error micrófono: ${err.message}`;
     });
   }, delayMs);
@@ -834,7 +861,8 @@ async function startPushToTalk() {
   pttButton.textContent = '🔴 Grabando... pulsa para transcribir';
   pttButton.classList.add('active');
   setVoiceStatus('Escuchando...');
-  voiceTranscript.textContent = 'Grabando audio local...';
+  if (voiceCallActive) setVoiceCallState('Te escucho...', 'live');
+  voiceTranscript.textContent = voiceCallActive ? 'Escuchando turno de llamada...' : 'Grabando audio local...';
   if (voiceCallActive) {
     if (voiceCallTurnTimer) clearTimeout(voiceCallTurnTimer);
     voiceCallTurnTimer = setTimeout(() => stopPushToTalk(), 4500);
@@ -881,6 +909,7 @@ async function stopPushToTalk() {
   pttButton.textContent = '⏳ Transcribiendo...';
   pttButton.disabled = true;
   setVoiceStatus(`Transcribiendo (${sttModel})...`);
+  if (voiceCallActive) setVoiceCallState('Transcribiendo...', 'busy');
   voiceTranscript.textContent = `Transcribiendo localmente con modelo ${sttModel}...`;
   const res = await fetch(`/api/voice/listen?model=${encodeURIComponent(sttModel)}`, { method: 'POST', body: fd });
   const data = await res.json();
@@ -891,6 +920,7 @@ async function stopPushToTalk() {
     if (data.text) addVoiceTurn('Tú', data.text);
     if (voiceAutoSend.checked && transcriptionLooksGood(data.text)) {
       setVoiceStatus('Transcripción buena. Enviando a Nia...');
+      if (voiceCallActive) setVoiceCallState('Pensando...', 'busy');
       await askNiaAndSpeak();
     } else if (voiceAutoSend.checked) {
       setVoiceStatus('Transcripción dudosa. Revisa antes de enviar.');
@@ -939,6 +969,7 @@ async function cancelActiveRecording() {
 
 startVoiceCallButton.addEventListener('click', async () => {
   setVoiceCallActive(true);
+  setVoiceCallState('Preparando micrófono...', 'busy');
   document.querySelector('#voiceResponseMode').value = 'fast';
   document.querySelector('#voiceSttModel').value = 'base';
   voiceAutoSend.checked = true;
@@ -948,6 +979,7 @@ startVoiceCallButton.addEventListener('click', async () => {
   await startPushToTalk().catch(err => {
     setVoiceCallActive(false);
     setVoiceStatus('No se pudo iniciar llamada.');
+    setVoiceCallState('No se pudo iniciar llamada.', 'ended');
     voiceTranscript.textContent = `Error micrófono: ${err.message}`;
   });
 });
@@ -958,6 +990,7 @@ stopVoiceCallButton.addEventListener('click', async () => {
   pauseVoiceAutoButton.disabled = true;
   await cancelActiveRecording();
   setVoiceStatus('Llamada finalizada.');
+  setVoiceCallState('Llamada finalizada.', 'ended');
   voiceResult.textContent = 'Has colgado la llamada web.';
 });
 const voiceResult = document.querySelector('#voiceResult');
@@ -1056,6 +1089,7 @@ async function askNiaAndSpeak() {
   pttButton.disabled = true;
   askNiaVoiceButton.textContent = '🧠 Nia pensando...';
   setVoiceStatus('Nia pensando...');
+  if (voiceCallActive) setVoiceCallState('Pensando...', 'busy');
   voiceResult.textContent = 'Enviando a Nia...';
   voiceAudio.style.display = 'none';
   voiceAudio.removeAttribute('src');
@@ -1077,17 +1111,21 @@ async function askNiaAndSpeak() {
       addVoiceTurn('Nia', data.reply);
       askNiaVoiceButton.textContent = '🔊 Reproduciendo respuesta';
       setVoiceStatus('Hablando...');
+      if (voiceCallActive) setVoiceCallState('Hablando...', 'busy');
       await playVoiceAudio(voiceCallActive);
       setVoiceStatus('Listo para hablar otra vez.');
+      if (voiceCallActive) setVoiceCallState('Preparando siguiente turno...', 'live');
       if (voiceCallActive) scheduleVoiceCallListen(800);
     } else {
       setVoiceStatus('Error recibiendo respuesta de Nia.');
       voiceResult.textContent = JSON.stringify(data, null, 2);
+      if (voiceCallActive) setVoiceCallState('Error de respuesta. Reintentando...', 'ended');
       if (voiceCallActive) scheduleVoiceCallListen(1500);
     }
   } catch (err) {
     setVoiceStatus('Error enviando a Nia.');
     voiceResult.textContent = `Error enviando a Nia: ${err.message}`;
+    if (voiceCallActive) setVoiceCallState('Error enviando. Reintentando...', 'ended');
     if (voiceCallActive) scheduleVoiceCallListen(1500);
   } finally {
     askNiaVoiceButton.disabled = false;
