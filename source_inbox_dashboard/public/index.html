@@ -97,8 +97,12 @@
     .call-dot.busy { background:#eab308; box-shadow:0 0 0 4px rgba(234,179,8,.14); }
     .call-dot.ended { background:#ef4444; box-shadow:0 0 0 4px rgba(239,68,68,.14); }
     .manual-voice-controls { border-top:1px solid rgba(148,163,184,.12); margin-top:14px; padding-top:12px; }
+    .latency-grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:8px; margin-top:10px; }
+    .latency-card { border:1px solid rgba(148,163,184,.16); background:rgba(8,13,20,.55); border-radius:12px; padding:10px; }
+    .latency-card strong { display:block; font-size:.62rem; color:#93a4b8; text-transform:uppercase; letter-spacing:.06em; }
+    .latency-card span { display:block; margin-top:4px; font-size:.95rem; font-weight:900; color:#f8fafc; }
     body.call-active #pushToTalk { display:none; }
-    @media (max-width: 900px) { .app-header, .source-grid { grid-template-columns: 1fr; } .repo-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); } .repo-card { padding:14px; min-height:96px; } .timeline { grid-template-columns: repeat(9, 120px); } .row { grid-template-columns: 1fr; } .file-row { grid-template-columns: 54px minmax(0, 1fr); } .row > :last-child { justify-content:flex-start; } .file-row > :last-child { grid-column: 1 / -1; } .call-controls { grid-template-columns: 1fr; } .call-hangup { width:100%; } .scroll-list { max-height: 360px; } body { padding:16px 10px 36px; } section, .panel { padding:14px; } }
+    @media (max-width: 900px) { .app-header, .source-grid { grid-template-columns: 1fr; } .repo-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); } .repo-card { padding:14px; min-height:96px; } .timeline { grid-template-columns: repeat(9, 120px); } .row { grid-template-columns: 1fr; } .file-row { grid-template-columns: 54px minmax(0, 1fr); } .row > :last-child { justify-content:flex-start; } .file-row > :last-child { grid-column: 1 / -1; } .call-controls { grid-template-columns: 1fr; } .call-hangup { width:100%; } .latency-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .scroll-list { max-height: 360px; } body { padding:16px 10px 36px; } section, .panel { padding:14px; } }
   </style>
 </head>
 <body>
@@ -206,6 +210,13 @@
         </div>
         <button id="interruptVoiceCall" class="call-interrupt" type="button">Interrumpir y hablar ahora</button>
         <div class="call-state"><span id="voiceCallDot" class="call-dot"></span><span id="voiceCallLabel">Modo llamada listo.</span></div>
+        <div id="voiceCallBottleneck" class="small">Latencia de llamada: esperando primer turno.</div>
+        <div class="latency-grid">
+          <div class="latency-card"><strong>STT</strong><span id="callLatencyStt">—</span></div>
+          <div class="latency-card"><strong>Nia</strong><span id="callLatencyAgent">—</span></div>
+          <div class="latency-card"><strong>Piper</strong><span id="callLatencyTts">—</span></div>
+          <div class="latency-card"><strong>Total</strong><span id="callLatencyTotal">—</span></div>
+        </div>
       </div>
       <div id="voiceStatus" class="next-action">Listo para hablar.</div>
       <pre id="voiceTranscript">Transcripción pendiente.</pre>
@@ -244,6 +255,7 @@
       <audio id="voiceAudio" controls style="width:100%; display:none"></audio>
       <pre id="voiceResult">Listo.</pre>
       <div id="voiceMetrics" class="hint-card">Métricas: esperando prueba de voz.</div>
+      <div id="voiceCallLatencyHistory" class="compact-scroll">Histórico de llamada: sin turnos todavía.</div>
       <div id="voiceConversation" class="compact-scroll">Sin conversación todavía.</div>
     </section>
   </main>
@@ -762,11 +774,14 @@ const stopVoiceCallButton = document.querySelector('#stopVoiceCall');
 const interruptVoiceCallButton = document.querySelector('#interruptVoiceCall');
 const voiceCallDot = document.querySelector('#voiceCallDot');
 const voiceCallLabel = document.querySelector('#voiceCallLabel');
+const voiceCallBottleneck = document.querySelector('#voiceCallBottleneck');
+const voiceCallLatencyHistory = document.querySelector('#voiceCallLatencyHistory');
 const voiceTranscript = document.querySelector('#voiceTranscript');
 const voiceStatus = document.querySelector('#voiceStatus');
 let voiceCallActive = false;
 let voiceCallLoopTimer = null;
 let voiceCallTurnTimer = null;
+let currentCallTurn = null;
 function setVoiceStatus(text) {
   voiceStatus.textContent = text;
 }
@@ -774,6 +789,43 @@ function setVoiceStatus(text) {
 function setVoiceCallState(label, state = 'idle') {
   voiceCallLabel.textContent = label;
   voiceCallDot.className = `call-dot ${state}`.trim();
+}
+
+function callTurnStarted() {
+  if (!voiceCallActive) return;
+  currentCallTurn = { startedAt: Date.now(), sttMs: null, agentMs: null, ttsMs: null, totalMs: null, text: '', reply: '' };
+}
+
+function updateCallLatencyCards(turn = currentCallTurn) {
+  const set = (id, value) => { document.querySelector(id).textContent = value == null ? '—' : formatMs(value); };
+  set('#callLatencyStt', turn?.sttMs);
+  set('#callLatencyAgent', turn?.agentMs);
+  set('#callLatencyTts', turn?.ttsMs);
+  set('#callLatencyTotal', turn?.totalMs);
+  if (!turn?.totalMs) {
+    voiceCallBottleneck.textContent = 'Latencia de llamada: esperando turno completo.';
+    return;
+  }
+  const parts = [
+    ['STT', turn.sttMs || 0],
+    ['Nia', turn.agentMs || 0],
+    ['Piper', turn.ttsMs || 0]
+  ].sort((a, b) => b[1] - a[1]);
+  const slow = parts[0];
+  const mark = turn.totalMs > 12000 ? 'lento' : turn.totalMs > 8000 ? 'mejorable' : 'bien';
+  voiceCallBottleneck.textContent = `Latencia ${mark}: cuello de botella ${slow[0]} (${formatMs(slow[1])}).`;
+}
+
+function finishCallTurn() {
+  if (!voiceCallActive || !currentCallTurn) return;
+  currentCallTurn.totalMs = Date.now() - currentCallTurn.startedAt;
+  updateCallLatencyCards(currentCallTurn);
+  if (voiceCallLatencyHistory.textContent === 'Histórico de llamada: sin turnos todavía.') voiceCallLatencyHistory.textContent = '';
+  const item = document.createElement('div');
+  item.className = 'hint-card';
+  item.textContent = `Turno ${new Date().toLocaleTimeString()}: total ${formatMs(currentCallTurn.totalMs)} · STT ${formatMs(currentCallTurn.sttMs)} · Nia ${formatMs(currentCallTurn.agentMs)} · Piper ${formatMs(currentCallTurn.ttsMs)}`;
+  voiceCallLatencyHistory.prepend(item);
+  while (voiceCallLatencyHistory.children.length > 6) voiceCallLatencyHistory.removeChild(voiceCallLatencyHistory.lastChild);
 }
 
 function setVoiceCallActive(active) {
@@ -793,6 +845,7 @@ function setVoiceCallActive(active) {
     clearTimeout(voiceCallTurnTimer);
     voiceCallTurnTimer = null;
   }
+  if (!active) currentCallTurn = null;
 }
 
 function scheduleVoiceCallListen(delayMs = 700) {
@@ -886,6 +939,7 @@ async function startPushToTalk() {
   audioSource.connect(audioProcessor);
   audioProcessor.connect(audioContext.destination);
   recordingStartedAt = Date.now();
+  if (voiceCallActive) callTurnStarted();
   pttButton.textContent = '🔴 Grabando... pulsa para transcribir';
   pttButton.classList.add('active');
   setVoiceStatus('Escuchando...');
@@ -949,6 +1003,11 @@ async function stopPushToTalk() {
   const res = await fetch(`/api/voice/listen?model=${encodeURIComponent(sttModel)}`, { method: 'POST', body: fd });
   const data = await res.json();
   if (data.ok) {
+    if (voiceCallActive && currentCallTurn) {
+      currentCallTurn.sttMs = data.metrics?.sttMs ?? null;
+      currentCallTurn.text = data.text || '';
+      updateCallLatencyCards();
+    }
     voiceTranscript.textContent = data.text || '(sin texto detectado)';
     showVoiceMetrics('transcripción', data.metrics, { model: data.model, duration: data.duration });
     document.querySelector('#voiceText').value = data.text || '';
@@ -1005,6 +1064,9 @@ async function cancelActiveRecording() {
 startVoiceCallButton.addEventListener('click', async () => {
   setVoiceCallActive(true);
   setVoiceCallState('Preparando micrófono...', 'busy');
+  voiceCallLatencyHistory.textContent = 'Histórico de llamada: sin turnos todavía.';
+  currentCallTurn = null;
+  updateCallLatencyCards(null);
   document.querySelector('#voiceResponseMode').value = 'fast';
   document.querySelector('#voiceSttModel').value = 'base';
   voiceAutoSend.checked = true;
@@ -1138,6 +1200,12 @@ async function askNiaAndSpeak() {
     });
     const data = await res.json();
     if (data.ok) {
+      if (voiceCallActive && currentCallTurn) {
+        currentCallTurn.agentMs = data.metrics?.agentMs ?? null;
+        currentCallTurn.ttsMs = data.metrics?.ttsMs ?? null;
+        currentCallTurn.reply = data.reply || '';
+        updateCallLatencyCards();
+      }
       voiceResult.textContent = data.reply;
       showVoiceMetrics('respuesta', data.metrics, { mode: data.voiceStyle === 'phone' ? 'teléfono' : data.mode });
       voiceAudio.src = data.audioUrl;
@@ -1154,6 +1222,7 @@ async function askNiaAndSpeak() {
       }
       await playVoiceAudio(voiceCallActive);
       document.body.classList.remove('call-speaking');
+      if (voiceCallActive) finishCallTurn();
       setVoiceStatus('Listo para hablar otra vez.');
       if (voiceCallActive) setVoiceCallState('Preparando siguiente turno...', 'live');
       if (voiceCallActive) scheduleVoiceCallListen(800);
