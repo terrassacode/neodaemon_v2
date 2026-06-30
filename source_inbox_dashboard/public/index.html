@@ -236,7 +236,7 @@
         <option value="full">Completo · tareas serias</option>
       </select>
       <p class="small">Rápido evita herramientas y contexto pesado. Completo mantiene el comportamiento anterior.</p>
-      <div id="voicePhoneStyleNotice" class="hint-card" style="display:none">Modo teléfono activo: respuestas de 1–2 frases para reducir espera y sonar más natural.</div>
+      <div id="voicePhoneStyleNotice" class="hint-card" style="display:none">Modo teléfono activo: respuestas de una frase corta para reducir espera y audio.</div>
       <label class="small"><input id="voiceAutoSend" type="checkbox"> Autoenviar transcripciones buenas</label>
       <button id="pauseVoiceAuto" type="button" disabled>Pausar modo automático</button>
       <div class="manual-voice-controls">
@@ -767,9 +767,9 @@ let lastVoiceAt = 0;
 const MIN_RECORDING_MS = 900;
 const MAX_RECORDING_MS = 30000;
 const MIN_WAV_BYTES = 8000;
-const CALL_TURN_MAX_MS = 6500;
-const CALL_MIN_VOICE_MS = 900;
-const CALL_SILENCE_AFTER_VOICE_MS = 950;
+const CALL_TURN_MAX_MS = 5500;
+const CALL_MIN_VOICE_MS = 700;
+const CALL_SILENCE_AFTER_VOICE_MS = 750;
 const CALL_VOICE_RMS = 0.018;
 const pttButton = document.querySelector('#pushToTalk');
 const startVoiceCallButton = document.querySelector('#startVoiceCall');
