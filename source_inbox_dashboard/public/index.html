@@ -212,9 +212,12 @@
         <div class="call-state"><span id="voiceCallDot" class="call-dot"></span><span id="voiceCallLabel">Modo llamada listo.</span></div>
         <div id="voiceCallBottleneck" class="small">Latencia de llamada: esperando primer turno.</div>
         <div class="latency-grid">
+          <div class="latency-card"><strong>Grabación</strong><span id="callLatencyRecording">—</span></div>
           <div class="latency-card"><strong>STT</strong><span id="callLatencyStt">—</span></div>
           <div class="latency-card"><strong>Nia</strong><span id="callLatencyAgent">—</span></div>
           <div class="latency-card"><strong>Piper</strong><span id="callLatencyTts">—</span></div>
+          <div class="latency-card"><strong>Audio</strong><span id="callLatencyPlayback">—</span></div>
+          <div class="latency-card"><strong>Extra</strong><span id="callLatencyOverhead">—</span></div>
           <div class="latency-card"><strong>Total</strong><span id="callLatencyTotal">—</span></div>
         </div>
       </div>
@@ -793,23 +796,29 @@ function setVoiceCallState(label, state = 'idle') {
 
 function callTurnStarted() {
   if (!voiceCallActive) return;
-  currentCallTurn = { startedAt: Date.now(), sttMs: null, agentMs: null, ttsMs: null, totalMs: null, text: '', reply: '' };
+  currentCallTurn = { startedAt: Date.now(), recordingMs: null, sttMs: null, agentMs: null, ttsMs: null, playbackMs: null, overheadMs: null, totalMs: null, text: '', reply: '' };
 }
 
 function updateCallLatencyCards(turn = currentCallTurn) {
   const set = (id, value) => { document.querySelector(id).textContent = value == null ? '—' : formatMs(value); };
+  set('#callLatencyRecording', turn?.recordingMs);
   set('#callLatencyStt', turn?.sttMs);
   set('#callLatencyAgent', turn?.agentMs);
   set('#callLatencyTts', turn?.ttsMs);
+  set('#callLatencyPlayback', turn?.playbackMs);
+  set('#callLatencyOverhead', turn?.overheadMs);
   set('#callLatencyTotal', turn?.totalMs);
   if (!turn?.totalMs) {
     voiceCallBottleneck.textContent = 'Latencia de llamada: esperando turno completo.';
     return;
   }
   const parts = [
+    ['Grabación', turn.recordingMs || 0],
     ['STT', turn.sttMs || 0],
     ['Nia', turn.agentMs || 0],
-    ['Piper', turn.ttsMs || 0]
+    ['Piper', turn.ttsMs || 0],
+    ['Audio', turn.playbackMs || 0],
+    ['Extra', turn.overheadMs || 0]
   ].sort((a, b) => b[1] - a[1]);
   const slow = parts[0];
   const mark = turn.totalMs > 12000 ? 'lento' : turn.totalMs > 8000 ? 'mejorable' : 'bien';
@@ -819,11 +828,14 @@ function updateCallLatencyCards(turn = currentCallTurn) {
 function finishCallTurn() {
   if (!voiceCallActive || !currentCallTurn) return;
   currentCallTurn.totalMs = Date.now() - currentCallTurn.startedAt;
+  const knownMs = ['recordingMs', 'sttMs', 'agentMs', 'ttsMs', 'playbackMs']
+    .reduce((sum, key) => sum + (Number(currentCallTurn[key]) || 0), 0);
+  currentCallTurn.overheadMs = Math.max(0, currentCallTurn.totalMs - knownMs);
   updateCallLatencyCards(currentCallTurn);
   if (voiceCallLatencyHistory.textContent === 'Histórico de llamada: sin turnos todavía.') voiceCallLatencyHistory.textContent = '';
   const item = document.createElement('div');
   item.className = 'hint-card';
-  item.textContent = `Turno ${new Date().toLocaleTimeString()}: total ${formatMs(currentCallTurn.totalMs)} · STT ${formatMs(currentCallTurn.sttMs)} · Nia ${formatMs(currentCallTurn.agentMs)} · Piper ${formatMs(currentCallTurn.ttsMs)}`;
+  item.textContent = `Turno ${new Date().toLocaleTimeString()}: total ${formatMs(currentCallTurn.totalMs)} · grabación ${formatMs(currentCallTurn.recordingMs)} · STT ${formatMs(currentCallTurn.sttMs)} · Nia ${formatMs(currentCallTurn.agentMs)} · Piper ${formatMs(currentCallTurn.ttsMs)} · audio ${formatMs(currentCallTurn.playbackMs)} · extra ${formatMs(currentCallTurn.overheadMs)}`;
   voiceCallLatencyHistory.prepend(item);
   while (voiceCallLatencyHistory.children.length > 6) voiceCallLatencyHistory.removeChild(voiceCallLatencyHistory.lastChild);
 }
@@ -954,6 +966,10 @@ async function startPushToTalk() {
 async function stopPushToTalk() {
   if (!audioContext) return;
   const elapsed = Date.now() - recordingStartedAt;
+  if (voiceCallActive && currentCallTurn) {
+    currentCallTurn.recordingMs = elapsed;
+    updateCallLatencyCards();
+  }
   const context = audioContext;
   const sampleRate = context.sampleRate;
   const chunks = audioChunks;
@@ -1220,7 +1236,12 @@ async function askNiaAndSpeak() {
         document.body.classList.add('call-speaking');
         setVoiceCallState('Hablando... puedes interrumpirme.', 'busy');
       }
+      const playbackStartedAt = Date.now();
       await playVoiceAudio(voiceCallActive);
+      if (voiceCallActive && currentCallTurn) {
+        currentCallTurn.playbackMs = Date.now() - playbackStartedAt;
+        updateCallLatencyCards();
+      }
       document.body.classList.remove('call-speaking');
       if (voiceCallActive) finishCallTurn();
       setVoiceStatus('Listo para hablar otra vez.');
