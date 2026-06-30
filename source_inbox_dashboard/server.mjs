@@ -631,11 +631,11 @@ function voiceAgentPrompt(text, mode = 'fast', style = 'default') {
     return [
       'Modo llamada telefónica de Nia.',
       'Responde en español como si estuvieras hablando por teléfono con Albert.',
-      'Máximo 2 frases cortas. Natural, cercana y directa.',
+      'Máximo 1 frase corta. Natural, cercana y directa.',
       'No hagas listas. No uses markdown. No expliques procesos internos.',
       'Si necesitas más contexto, pregunta una sola cosa concreta.',
-      'Si la petición requiere acciones reales, di brevemente que lo hacemos en modo completo.',
-      'Máximo 220 caracteres.',
+      'Si requiere acciones reales, di que lo hacemos en modo completo.',
+      'Máximo 140 caracteres.',
       '',
       `Albert dice: ${text}`
     ].join('\n');
@@ -715,7 +715,7 @@ async function handleVoiceAskNia(req, res) {
       metrics
     });
   }
-  const maxReplyLength = voiceStyle === 'phone' ? 260 : mode === 'fast' ? 500 : 800;
+  const maxReplyLength = voiceStyle === 'phone' ? 180 : mode === 'fast' ? 500 : 800;
   const spokenText = reply.length > maxReplyLength ? `${reply.slice(0, maxReplyLength - 3)}...` : reply;
   const audio = await createVoiceAudio(spokenText);
   const metrics = { agentMs, ttsMs: audio.metrics?.ttsMs || null, totalMs: elapsedMs(totalStart) };
