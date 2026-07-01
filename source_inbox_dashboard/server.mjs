@@ -12,6 +12,9 @@ const MAX_UPLOAD = 25 * 1024 * 1024;
 const PORT = Number(process.env.SOURCE_INBOX_PORT || 8788);
 const HOST = process.env.SOURCE_INBOX_HOST || '127.0.0.1';
 const REMINDERS_FILE = '/openclaw/openclaw_v2/data/daily-reminders/reminders.json';
+const FAULTS_ROOT = path.resolve('/openclaw/openclaw_v2/data/faults');
+const FAULTS_FILE = path.join(FAULTS_ROOT, 'faults.json');
+const FAULT_IMAGES_DIR = path.join(FAULTS_ROOT, 'images');
 const REPO_ROOT = path.resolve('/openclaw/openclaw_v2');
 const GITHUB_REPO = 'terrassacode/neodaemon_v2';
 const SECRET_TOKEN_RE = new RegExp(`gho${'_'}[A-Za-z0-9_]+|github${'_'}pat${'_'}[A-Za-z0-9_]+`, 'g');
@@ -76,6 +79,7 @@ async function ensureDirs() {
   await fs.mkdir(VOICE_OUT_DIR, { recursive: true });
   await fs.mkdir(VOICE_IN_DIR, { recursive: true });
   await fs.mkdir(path.dirname(VOICE_METRICS_FILE), { recursive: true });
+  await fs.mkdir(FAULT_IMAGES_DIR, { recursive: true });
 }
 
 
@@ -397,6 +401,27 @@ function filePart(parts) {
   return null;
 }
 
+function multipartDisposition(part) {
+  const disp = /content-disposition:\s*form-data;([^\r\n]+)/i.exec(part.rawHeaders)?.[1] || '';
+  return {
+    name: /name="([^"]*)"/i.exec(disp)?.[1] || '',
+    filename: /filename="([^"]*)"/i.exec(disp)?.[1] || '',
+    mime: /content-type:\s*([^\r\n]+)/i.exec(part.rawHeaders)?.[1]?.trim().toLowerCase() || 'application/octet-stream'
+  };
+}
+
+function multipartFields(parts) {
+  const fields = {};
+  const files = [];
+  for (const part of parts) {
+    const info = multipartDisposition(part);
+    if (!info.name) continue;
+    if (info.filename) files.push({ field: info.name, filename: info.filename, mime: info.mime, content: part.content });
+    else fields[info.name] = part.content.toString('utf8').trim();
+  }
+  return { fields, files };
+}
+
 
 async function readReminders() {
   try {
@@ -450,6 +475,101 @@ async function handleCompleteReminder(req, res) {
   item.doneAt = new Date().toISOString();
   await writeReminders(items);
   sendJson(res, 200, { ok: true, item });
+}
+
+async function readFaults() {
+  try {
+    const data = JSON.parse(await fs.readFile(FAULTS_FILE, 'utf8'));
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeFaults(items) {
+  await fs.mkdir(FAULTS_ROOT, { recursive: true });
+  await fs.writeFile(FAULTS_FILE, JSON.stringify(items, null, 2));
+}
+
+function nextFaultId(items) {
+  const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const prefix = `AV-${day}-`;
+  const max = items.reduce((n, item) => {
+    const match = new RegExp(`^${prefix}(\\d{4})$`).exec(String(item.id || ''));
+    return match ? Math.max(n, Number(match[1])) : n;
+  }, 0);
+  return `${prefix}${String(max + 1).padStart(4, '0')}`;
+}
+
+function faultOptions(items) {
+  const collect = (key, defaults = []) => [...new Set([...defaults, ...items.map(item => String(item[key] || '').trim()).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
+  return {
+    modelos: collect('modelo', ['PQ21', 'PQ27', 'PQ38']),
+    instalaciones: collect('instalacion'),
+    operaciones: collect('operacion'),
+    elementos: collect('elemento')
+  };
+}
+
+function normalizeFaultText(value, max = 200) {
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, max);
+}
+
+async function handleListFaults(req, res) {
+  const url = new URL(req.url, 'http://localhost');
+  const q = String(url.searchParams.get('q') || '').trim().toLowerCase();
+  const items = await readFaults();
+  const filtered = q ? items.filter(item => [
+    item.id, item.modelo, item.instalacion, item.operacion, item.elemento, item.averia, item.solucion
+  ].join(' ').toLowerCase().includes(q)) : items;
+  filtered.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  sendJson(res, 200, { ok: true, items: filtered, total: items.length, options: faultOptions(items) });
+}
+
+async function handleCreateFault(req, res) {
+  const body = await readBody(req, 50 * 1024 * 1024);
+  const { fields, files } = multipartFields(parseMultipart(body, req.headers['content-type']));
+  const modelo = normalizeFaultText(fields.modelo);
+  const instalacion = normalizeFaultText(fields.instalacion);
+  const operacion = normalizeFaultText(fields.operacion);
+  const elemento = normalizeFaultText(fields.elemento);
+  const averia = String(fields.averia || '').trim().slice(0, 5000);
+  const solucion = String(fields.solucion || '').trim().slice(0, 5000);
+  if (!modelo || !instalacion || !operacion || !elemento || !averia) {
+    return sendJson(res, 400, { ok: false, error: 'missing_required_fields' });
+  }
+  const items = await readFaults();
+  const id = nextFaultId(items);
+  const images = [];
+  for (const file of files.filter(file => file.field === 'images' && file.content.length)) {
+    if (!String(file.mime || '').startsWith('image/')) return sendJson(res, 415, { ok: false, error: 'unsupported_image_type', mime: file.mime });
+    const ext = allowedMime.get(file.mime);
+    if (!ext) return sendJson(res, 415, { ok: false, error: 'unsupported_image_type', mime: file.mime });
+    const originalName = safeName(file.filename || 'image');
+    const storedName = `${id}_${crypto.randomUUID().slice(0, 8)}_${originalName.endsWith(ext) ? originalName : originalName + ext}`;
+    const filePath = path.join(FAULT_IMAGES_DIR, storedName);
+    await fs.writeFile(filePath, file.content, { flag: 'wx' });
+    images.push({ originalName, storedName, mime: file.mime, bytes: file.content.length, url: `/fault-images/${encodeURIComponent(storedName)}` });
+  }
+  const item = { id, modelo, instalacion, operacion, elemento, averia, solucion, images, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  items.unshift(item);
+  await writeFaults(items);
+  sendJson(res, 201, { ok: true, item, options: faultOptions(items) });
+}
+
+async function serveFaultImage(req, res) {
+  const url = new URL(req.url, 'http://localhost');
+  const name = decodeURIComponent(url.pathname.replace(/^\/fault-images\//, ''));
+  if (!/^[A-Za-z0-9_.-]+$/.test(name)) return sendJson(res, 400, { ok: false, error: 'bad_filename' }, req);
+  const filePath = path.resolve(FAULT_IMAGES_DIR, name);
+  if (!filePath.startsWith(path.resolve(FAULT_IMAGES_DIR) + path.sep)) return sendJson(res, 403, { ok: false, error: 'forbidden' }, req);
+  let stat;
+  try { stat = await fs.stat(filePath); } catch { return sendJson(res, 404, { ok: false, error: 'not_found' }, req); }
+  const ext = path.extname(filePath).toLowerCase();
+  const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : ext === '.gif' ? 'image/gif' : 'image/jpeg';
+  res.writeHead(200, { 'content-type': mime, 'content-length': stat.size, 'cache-control': 'private, max-age=3600' });
+  if (req.method === 'HEAD') return res.end();
+  res.end(await fs.readFile(filePath));
 }
 
 
@@ -1029,13 +1149,16 @@ const server = http.createServer(async (req, res) => {
   try {
     const pathname = new URL(req.url, 'http://localhost').pathname;
     if (req.method === 'GET' && pathname === '/api/reminders') return await handleListReminders(req, res);
+    if (req.method === 'GET' && pathname === '/api/faults') return await handleListFaults(req, res);
     if (req.method === 'GET' && pathname === '/api/repo/status') return await handleRepoStatus(req, res);
     if (req.method === 'GET' && pathname === '/api/activity') return await handleActivity(req, res);
     if ((req.method === 'GET' || req.method === 'HEAD') && pathname.startsWith('/source-files/')) return await serveSourceFile(req, res);
+    if ((req.method === 'GET' || req.method === 'HEAD') && pathname.startsWith('/fault-images/')) return await serveFaultImage(req, res);
     if (req.method === 'GET' && pathname === '/api/processing-queue') return await handleProcessingQueue(req, res);
     if (req.method === 'POST' && pathname === '/api/analyze-latest-file') return await handleAnalyzeLatestFile(req, res);
     if (req.method === 'POST' && pathname === '/api/healthcheck/quick') return await handleHealthcheckQuick(req, res);
     if (req.method === 'POST' && pathname === '/api/reminders') return await handleAddReminder(req, res);
+    if (req.method === 'POST' && pathname === '/api/faults') return await handleCreateFault(req, res);
     if (req.method === 'POST' && pathname === '/api/reminders/complete') return await handleCompleteReminder(req, res);
     if (req.method === 'POST' && pathname === '/api/upload') return await handleUpload(req, res);
     if (req.method === 'POST' && pathname === '/api/text') return await handleText(req, res);

@@ -80,6 +80,9 @@
     .file-row { grid-template-columns: 54px minmax(0, 1fr) auto; }
     .thumb { width:54px; height:54px; border-radius:12px; border:1px solid rgba(148,163,184,.20); background:#07101b; object-fit:cover; display:block; }
     .file-icon { width:54px; height:54px; border-radius:12px; border:1px solid rgba(148,163,184,.20); background:linear-gradient(135deg, rgba(59,130,246,.18), rgba(139,92,246,.14)); display:flex; align-items:center; justify-content:center; font-size:.72rem; font-weight:900; color:#dbeafe; }
+    .form-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; }
+    .fault-images { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+    .fault-images img { width:76px; height:76px; object-fit:cover; border-radius:12px; border:1px solid rgba(148,163,184,.22); background:#07101b; }
     .file-link { color:inherit; text-decoration:none; display:block; }
     .file-link:hover strong { color:#bfdbfe; text-decoration:underline; }
     .muted { color:var(--muted); }
@@ -102,7 +105,7 @@
     .latency-card strong { display:block; font-size:.62rem; color:#93a4b8; text-transform:uppercase; letter-spacing:.06em; }
     .latency-card span { display:block; margin-top:4px; font-size:.95rem; font-weight:900; color:#f8fafc; }
     body.call-active #pushToTalk { display:none; }
-    @media (max-width: 900px) { .app-header, .source-grid { grid-template-columns: 1fr; } .repo-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); } .repo-card { padding:14px; min-height:96px; } .timeline { grid-template-columns: repeat(9, 120px); } .row { grid-template-columns: 1fr; } .file-row { grid-template-columns: 54px minmax(0, 1fr); } .row > :last-child { justify-content:flex-start; } .file-row > :last-child { grid-column: 1 / -1; } .call-controls { grid-template-columns: 1fr; } .call-hangup { width:100%; } .latency-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .scroll-list { max-height: 360px; } body { padding:16px 10px 36px; } section, .panel { padding:14px; } }
+    @media (max-width: 900px) { .app-header, .source-grid, .form-grid { grid-template-columns: 1fr; } .repo-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); } .repo-card { padding:14px; min-height:96px; } .timeline { grid-template-columns: repeat(9, 120px); } .row { grid-template-columns: 1fr; } .file-row { grid-template-columns: 54px minmax(0, 1fr); } .row > :last-child { justify-content:flex-start; } .file-row > :last-child { grid-column: 1 / -1; } .call-controls { grid-template-columns: 1fr; } .call-hangup { width:100%; } .latency-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .scroll-list { max-height: 360px; } body { padding:16px 10px 36px; } section, .panel { padding:14px; } }
   </style>
 </head>
 <body>
@@ -120,6 +123,7 @@
     <button data-screen="activity">Actividad</button>
     <button data-screen="queue">Cola</button>
     <button data-screen="reminders">Recordatorios</button>
+    <button data-screen="faults">Averías</button>
     <button data-screen="repo">Repositorio</button>
     <button data-screen="voice">Voz</button>
   </nav>
@@ -191,6 +195,40 @@
     <section>
       <h2>Pendientes</h2>
       <div id="reminderList" class="compact-scroll">Cargando...</div>
+    </section>
+  </main>
+
+  <main id="faults" class="screen">
+    <section>
+      <div class="section-head"><div><h2>Registro de averías</h2><p class="small">Formulario local con desplegables editables, ID automático, imágenes y búsqueda.</p></div></div>
+      <form id="faultForm" enctype="multipart/form-data">
+        <div class="form-grid">
+          <div><label for="faultModelo">Modelo</label><input id="faultModelo" name="modelo" list="faultModelos" placeholder="PQ27" required /></div>
+          <div><label for="faultInstalacion">Instalación</label><input id="faultInstalacion" name="instalacion" list="faultInstalaciones" placeholder="Lateral Izquierdo" required /></div>
+          <div><label for="faultOperacion">Operación</label><input id="faultOperacion" name="operacion" list="faultOperaciones" placeholder="210" required /></div>
+          <div><label for="faultElemento">Elemento</label><input id="faultElemento" name="elemento" list="faultElementos" placeholder="Pinza" required /></div>
+        </div>
+        <datalist id="faultModelos"></datalist>
+        <datalist id="faultInstalaciones"></datalist>
+        <datalist id="faultOperaciones"></datalist>
+        <datalist id="faultElementos"></datalist>
+        <label for="faultAveria">Avería</label>
+        <textarea id="faultAveria" name="averia" placeholder="Describe la avería" required></textarea>
+        <label for="faultSolucion">Solución</label>
+        <textarea id="faultSolucion" name="solucion" placeholder="Describe la solución aplicada"></textarea>
+        <label for="faultImages">Imágenes</label>
+        <input id="faultImages" name="images" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple />
+        <button type="submit">Guardar avería</button>
+      </form>
+      <pre id="faultResult">Listo.</pre>
+    </section>
+    <section>
+      <div class="toolbar">
+        <div><h2>Buscar averías</h2><p class="small">Busca por ID, modelo, instalación, operación, elemento, avería o solución.</p></div>
+        <button id="faultRefresh" type="button">Refrescar</button>
+      </div>
+      <input id="faultSearch" placeholder="Ej: PQ27 pinza 210 lateral" />
+      <div id="faultList" class="list scroll-list">Cargando...</div>
     </section>
   </main>
 
@@ -606,6 +644,36 @@ async function loadActivity() {
   }
 }
 
+function fillDatalist(id, values = []) {
+  document.querySelector(id).innerHTML = values.map(value => `<option value="${escapeHtml(value)}"></option>`).join('');
+}
+
+function renderFaults(data) {
+  const options = data.options || {};
+  fillDatalist('#faultModelos', options.modelos || []);
+  fillDatalist('#faultInstalaciones', options.instalaciones || []);
+  fillDatalist('#faultOperaciones', options.operaciones || []);
+  fillDatalist('#faultElementos', options.elementos || []);
+  const items = data.items || [];
+  document.querySelector('#faultList').innerHTML = items.length ? items.map(item => {
+    const images = (item.images || []).map(img => `<a href="${escapeHtml(img.url)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(img.url)}" alt="${escapeHtml(img.originalName || item.id)}" loading="lazy" /></a>`).join('');
+    return `<div class="row"><div><strong>${escapeHtml(item.id)}</strong><div class="small">${escapeHtml(item.modelo)} · ${escapeHtml(item.instalacion)} · Op. ${escapeHtml(item.operacion)} · ${escapeHtml(item.elemento)}</div><p>${escapeHtml(item.averia || '')}</p>${item.solucion ? `<p class="small"><strong>Solución:</strong> ${escapeHtml(item.solucion)}</p>` : ''}${images ? `<div class="fault-images">${images}</div>` : ''}<div class="small">${escapeHtml(item.createdAt || '')}</div></div><span class="badge info">avería</span></div>`;
+  }).join('') : 'Sin averías.';
+}
+
+async function loadFaults() {
+  const q = document.querySelector('#faultSearch')?.value || '';
+  document.querySelector('#faultList').textContent = 'Cargando averías...';
+  try {
+    const res = await fetch(`/api/faults?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'faults_failed');
+    renderFaults(data);
+  } catch (err) {
+    document.querySelector('#faultList').textContent = `No se pudieron cargar averías: ${err.message}`;
+  }
+}
+
 function renderGithubWorkflowHelper(data) {
   const box = document.querySelector('#githubWorkflowHelper');
   const openPr = (data.pullRequests || []).find(pr => pr.state === 'OPEN');
@@ -708,6 +776,7 @@ document.querySelectorAll('nav button').forEach(btn => {
     btn.classList.add('active');
     document.getElementById(btn.dataset.screen).classList.add('active');
     if (btn.dataset.screen === 'reminders') await loadReminders();
+    if (btn.dataset.screen === 'faults') await loadFaults();
     if (btn.dataset.screen === 'activity') await loadActivity();
     if (btn.dataset.screen === 'queue') await loadProcessingQueue();
     if (btn.dataset.screen === 'repo') await loadRepoStatus();
@@ -718,6 +787,23 @@ document.querySelectorAll('nav button').forEach(btn => {
 document.querySelector('#repoRefresh').addEventListener('click', loadRepoStatus);
 document.querySelector('#activityRefresh').addEventListener('click', loadActivity);
 document.querySelector('#queueRefresh').addEventListener('click', loadProcessingQueue);
+document.querySelector('#faultRefresh').addEventListener('click', loadFaults);
+document.querySelector('#faultSearch').addEventListener('input', () => loadFaults());
+document.querySelector('#faultForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const result = document.querySelector('#faultResult');
+  result.textContent = 'Guardando avería...';
+  try {
+    const res = await fetch('/api/faults', { method: 'POST', body: new FormData(e.target) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'fault_save_failed');
+    result.textContent = `Avería guardada: ${data.item.id}`;
+    e.target.reset();
+    await loadFaults();
+  } catch (err) {
+    result.textContent = `Error guardando avería: ${err.message}`;
+  }
+});
 document.querySelector('#healthcheckQuick').addEventListener('click', async () => {
   const box = document.querySelector('#healthcheckResult');
   const btn = document.querySelector('#healthcheckQuick');
